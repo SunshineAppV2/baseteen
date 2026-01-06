@@ -1,0 +1,1379 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@/context/AuthContext";
+import Link from "next/link";
+import { useCollection, firestoreService } from "@/hooks/useFirestore";
+import { Button } from "@/components/ui/Button";
+import {
+    Plus,
+    MessageSquare,
+    Clock,
+    Award,
+    Play,
+    Trash2,
+    Edit3,
+    CheckCircle2,
+    XCircle,
+    Users as UsersIcon,
+    Maximize2,
+    Minimize2,
+    BarChart3,
+    X,
+    Save,
+    History,
+    Calendar,
+    Upload,
+    Download,
+    FileSpreadsheet,
+    ArrowRight,
+    LayoutList,
+    Gamepad2,
+    MonitorPlay,
+    QrCode,
+    ChevronRight
+} from "lucide-react";
+import IndividualQuizPlayer from "./IndividualQuizPlayer";
+import * as XLSX from 'xlsx';
+import { clsx } from "clsx";
+import QRCode from "react-qr-code";
+import {
+    increment,
+    doc,
+    getDoc,
+    updateDoc,
+    addDoc,
+    collection,
+    serverTimestamp,
+    Timestamp
+} from "firebase/firestore";
+import { ref, set, onValue, off, update, get } from "firebase/database";
+import { rtdb, db } from "@/services/firebase";
+
+// --- Types ---
+interface QuizQuestion {
+    id: string; // generated locally for list keys if needed, or index
+    statement: string;
+    alternatives: { text: string; isCorrect: boolean }[];
+    timeLimit: number;
+    xpValue: number;
+}
+
+interface MasterQuiz {
+    id: string;
+    title: string;
+    description: string;
+    questions: QuizQuestion[];
+    createdAt: any;
+    updatedAt?: any;
+    isActive: boolean; // Just for organization
+    availableToStudents?: boolean;
+    baseId?: string;
+    classification?: 'pre-adolescente' | 'adolescente' | 'todos';
+}
+
+interface QuizHistory {
+    id: string;
+    date: any;
+    quizTitle: string;
+    totalParticipants: number;
+    leaderboard: { id: string, name: string, score: number }[];
+    questionsCount: number;
+}
+
+export default function QuizManagementPage() {
+    const { user } = useAuth();
+
+    // --- Data ---
+    const { data: myQuizzes, loading: loadingQuizzes } = useCollection<MasterQuiz>("master_quizzes");
+    const { data: history, loading: loadingHistory } = useCollection<QuizHistory>("quiz_history");
+
+    // --- State ---
+    const [activeTab, setActiveTab] = useState<"quizzes" | "arena" | "history">("quizzes");
+    const [gamePin, setGamePin] = useState<string>("");
+
+    // Live Arena State
+    const [selectedQuiz, setSelectedQuiz] = useState<MasterQuiz | null>(null);
+    const [isStarting, setIsStarting] = useState(false);
+    const [currentIdx, setCurrentIdx] = useState(-1);
+    const [stats, setStats] = useState<Record<number, number>>({});
+    const [totalAnswers, setTotalAnswers] = useState(0);
+    const [showQR, setShowQR] = useState(false);
+    const [liveStatus, setLiveStatus] = useState<'idle' | 'waiting' | 'in_progress' | 'finished'>('idle');
+
+    // Phase Control
+    const [isResultsVisible, setIsResultsVisible] = useState(false);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
+    const [liveLeaderboard, setLiveLeaderboard] = useState<{ name: string, score: number }[]>([]);
+    const [isEnding, setIsEnding] = useState(false);
+
+    // UI Control
+    const [isFullScreen, setIsFullScreen] = useState(false);
+    const [playingIndividualQuiz, setPlayingIndividualQuiz] = useState<MasterQuiz | null>(null);
+
+    // Helpers
+    const calculateLiveLeaderboard = async () => {
+        if (!gamePin) return [];
+        const answersRef = ref(rtdb, `active_quizzes/${gamePin}/answers`);
+
+        // Fetch once for intermediate (or could listen, but on demand is better for "Phase")
+        try {
+            const snapshot = await get(ref(rtdb, `active_quizzes/${gamePin}/answers`));
+            if (!snapshot.exists()) return [];
+
+            const allQuestionsAnswers = snapshot.val();
+            const scores: Record<string, { score: number, name: string }> = {};
+
+            Object.values(allQuestionsAnswers).forEach((questionAnswers: any) => {
+                Object.entries(questionAnswers).forEach(([userId, data]: [string, any]) => {
+                    // Initialize if missing
+                    if (!scores[userId]) scores[userId] = { score: 0, name: data.userName || "Anônimo" };
+
+                    if (data.isCorrect) {
+                        scores[userId].score += (data.xpValue || 100);
+                    }
+                });
+            });
+
+            return Object.values(scores)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 5); // Top 5
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
+    };
+    // Editor / Manager State
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [formData, setFormData] = useState({
+        title: "",
+        description: "",
+        availableToStudents: false,
+        classification: "todos" as 'pre-adolescente' | 'adolescente' | 'todos',
+        questions: [] as QuizQuestion[]
+    });
+
+    // --- Editor Logic ---
+    const resetForm = () => {
+        setFormData({
+            title: "",
+            description: "",
+            availableToStudents: false,
+            classification: "todos",
+            questions: [
+                {
+                    id: crypto.randomUUID(),
+                    statement: "",
+                    alternatives: [
+                        { text: "", isCorrect: true },
+                        { text: "", isCorrect: false },
+                        { text: "", isCorrect: false },
+                        { text: "", isCorrect: false }
+                    ],
+                    timeLimit: 30,
+                    xpValue: 100
+                }
+            ]
+        });
+    };
+
+    const handleCreateClick = () => {
+        setEditingId(null);
+        resetForm();
+        setIsModalOpen(true);
+    };
+
+    const handleEditClick = (quiz: MasterQuiz) => {
+        setEditingId(quiz.id);
+        setFormData({
+            title: quiz.title,
+            description: quiz.description,
+            availableToStudents: quiz.availableToStudents || false,
+            classification: quiz.classification || "todos",
+            questions: quiz.questions.map(q => ({
+                ...q,
+                id: q.id || crypto.randomUUID()
+            }))
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleDeleteQuiz = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm("Tem certeza que deseja excluir este quiz?")) return;
+        try {
+            await firestoreService.delete("master_quizzes", id);
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao excluir.");
+        }
+    };
+
+    const handleSaveQuiz = async () => {
+        if (!formData.title) return alert("Preencha o título!");
+        if (formData.questions.length === 0) return alert("Adicione pelo menos uma questão!");
+        if (formData.questions.some(q => !q.statement || q.alternatives.some(a => !a.text))) {
+            return alert("Preencha todos os campos das questões!");
+        }
+
+        try {
+            const payload: any = {
+                title: formData.title,
+                description: formData.description,
+                questions: formData.questions,
+                availableToStudents: formData.availableToStudents,
+                classification: formData.classification,
+                updatedAt: new Date()
+            };
+
+            // Se for Coord de Base, forçar o baseId e garantir availableToStudents
+            if (user?.role === 'coord_base' && user?.baseId) {
+                payload.baseId = user.baseId;
+            }
+
+            if (editingId) {
+                await firestoreService.update("master_quizzes", editingId, payload);
+                alert("Quiz atualizado!");
+            } else {
+                await firestoreService.add("master_quizzes", {
+                    ...payload,
+                    createdAt: new Date(),
+                    isActive: true
+                });
+                alert("Quiz criado!");
+            }
+            setIsModalOpen(false);
+            resetForm();
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao salvar.");
+        }
+    };
+
+    // --- Question Management in Form ---
+    const addQuestion = () => {
+        setFormData(prev => ({
+            ...prev,
+            questions: [...prev.questions, {
+                id: crypto.randomUUID(),
+                statement: "",
+                alternatives: [
+                    { text: "", isCorrect: true },
+                    { text: "", isCorrect: false },
+                    { text: "", isCorrect: false },
+                    { text: "", isCorrect: false }
+                ],
+                timeLimit: 30,
+                xpValue: 100
+            }]
+        }));
+    };
+
+    const removeQuestion = (index: number) => {
+        if (formData.questions.length <= 1) return alert("Mínimo de 1 questão!");
+        setFormData(prev => ({
+            ...prev,
+            questions: prev.questions.filter((_, i) => i !== index)
+        }));
+    };
+
+    const updateQuestion = (index: number, field: keyof QuizQuestion, value: any) => {
+        const newQuestions = [...formData.questions];
+        newQuestions[index] = { ...newQuestions[index], [field]: value };
+        setFormData({ ...formData, questions: newQuestions });
+    };
+
+    const updateAlternative = (qIndex: number, aIndex: number, text: string) => {
+        const newQuestions = [...formData.questions];
+        newQuestions[qIndex].alternatives[aIndex].text = text;
+        setFormData({ ...formData, questions: newQuestions });
+    };
+
+    const setCorrectAlternative = (qIndex: number, aIndex: number) => {
+        const newQuestions = [...formData.questions];
+        newQuestions[qIndex].alternatives = newQuestions[qIndex].alternatives.map((alt, i) => ({
+            ...alt,
+            isCorrect: i === aIndex
+        }));
+        setFormData({ ...formData, questions: newQuestions });
+    };
+
+    // --- Excel Import Logic ---
+    const handleDownloadTemplate = () => {
+        const wb = XLSX.utils.book_new();
+        const headers = ["PERGUNTA", "RESPOSTA A", "RESPOSTA B", "RESPOSTA C", "RESPOSTA D", "RESPOSTA CORRETA", "TEMPO", "XP"];
+        const data = [
+            headers,
+            ["Ex: Qual a cor do céu?", "Azul", "Verde", "Vermelho", "Amarelo", "A", 30, 100],
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, "Modelo");
+        XLSX.writeFile(wb, "modelo_quiz_area.xlsx");
+    };
+
+    const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+                let newQuestions: QuizQuestion[] = [];
+                let errors = 0;
+
+                for (const row of data) {
+                    const statement = row["PERGUNTA"];
+                    const optA = row["RESPOSTA A"];
+                    const optB = row["RESPOSTA B"];
+                    const optC = row["RESPOSTA C"];
+                    const optD = row["RESPOSTA D"];
+                    let correctRaw = row["RESPOSTA CORRETA"];
+                    const time = parseInt(row["TEMPO"] || "30");
+                    const xp = parseInt(row["XP"] || "100");
+
+                    if (!statement || !optA || !optB || !optC || !optD || !correctRaw) {
+                        errors++;
+                        continue;
+                    }
+
+                    let correctIdx = 0;
+                    correctRaw = String(correctRaw).trim().toUpperCase();
+                    if (correctRaw === 'A') correctIdx = 0;
+                    else if (correctRaw === 'B') correctIdx = 1;
+                    else if (correctRaw === 'C') correctIdx = 2;
+                    else if (correctRaw === 'D') correctIdx = 3;
+                    else {
+                        const opts = [String(optA), String(optB), String(optC), String(optD)];
+                        const matchIdx = opts.findIndex(o => o.trim().toUpperCase() === correctRaw);
+                        if (matchIdx !== -1) correctIdx = matchIdx;
+                    }
+
+                    newQuestions.push({
+                        id: crypto.randomUUID(),
+                        statement: String(statement),
+                        alternatives: [
+                            { text: String(optA), isCorrect: correctIdx === 0 },
+                            { text: String(optB), isCorrect: correctIdx === 1 },
+                            { text: String(optC), isCorrect: correctIdx === 2 },
+                            { text: String(optD), isCorrect: correctIdx === 3 }
+                        ],
+                        timeLimit: time,
+                        xpValue: xp
+                    });
+                }
+
+                if (newQuestions.length > 0) {
+                    setFormData(prev => ({
+                        ...prev,
+                        questions: [...prev.questions, ...newQuestions]
+                    }));
+                    alert(`Importado ${newQuestions.length} questões com sucesso!`);
+                } else {
+                    alert("Nenhuma questão válida encontrada.");
+                }
+                e.target.value = '';
+            } catch (error) {
+                console.error(error);
+                alert("Erro ao ler Excel.");
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
+
+    // --- Arena Logic ---
+    const handleSelectForArena = (quiz: MasterQuiz) => {
+        setSelectedQuiz(quiz);
+        setActiveTab("arena");
+    };
+
+    useEffect(() => {
+        // Monitor Live Status
+        const statusRef = ref(rtdb, 'active_quizzes/main_event/status');
+        const unsub = onValue(statusRef, (snap) => {
+            const val = snap.val();
+            setLiveStatus(val || 'idle');
+        });
+        return () => off(statusRef);
+    }, []);
+
+    useEffect(() => {
+        if (currentIdx === -1 || !selectedQuiz) {
+            setStats({});
+            setTotalAnswers(0);
+            return;
+        }
+
+        const qId = selectedQuiz.questions[currentIdx]?.id;
+        if (!qId) return;
+
+        const answersRef = ref(rtdb, `active_quizzes/main_event/answers/${qId}`);
+        const unsub = onValue(answersRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                const newStats: Record<number, number> = {};
+                let count = 0;
+                Object.values(data).forEach((ans: any) => {
+                    const opt = ans.selectedOption;
+                    newStats[opt] = (newStats[opt] || 0) + 1;
+                    count++;
+                });
+                setStats(newStats);
+                setTotalAnswers(count);
+            } else {
+                setStats({});
+                setTotalAnswers(0);
+            }
+        });
+
+        return () => off(answersRef);
+    }, [currentIdx, selectedQuiz]);
+
+    const startLiveQuiz = async () => {
+        if (!selectedQuiz) return;
+        setIsStarting(true);
+        try {
+            const newPin = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit PIN
+            setGamePin(newPin);
+
+            // Save to specific PIN node
+            await set(ref(rtdb, `active_quizzes/${newPin}`), {
+                status: 'waiting',
+                currentQuestionIndex: -1,
+                startTime: Date.now(),
+                participants: {},
+                quizId: selectedQuiz.id,
+                quizTitle: selectedQuiz.title,
+                baseId: (user?.role === 'coord_base' && user.baseId) ? user.baseId : (selectedQuiz.baseId || null)
+            });
+
+            // Also keep main_event active for debugging or legacy? 
+            // Better to switch fully to PIN but let's keep main_event as a redirect or just use PIN.
+            // Requirement is specific: "Select Base/Quiz after scanning". 
+            // If we use PIN, we don't need to select Quiz, just Name.
+
+            // Let's reset main_event to point to this PIN or just update it too for safety if someone is stuck on old app
+            // Or better, main_event is NO LONGER USED.
+            // But 'broadcastQuestion' uses it. We need to update that too.
+            // Wait, I need to update all 'main_event' references to us `active_quizzes/${gamePin}`.
+
+            await set(ref(rtdb, 'active_quizzes/main_event'), {
+                quizId: selectedQuiz.id,
+                baseId: selectedQuiz.baseId || null,
+                pin: newPin,
+                status: 'waiting'
+            });
+
+            setCurrentIdx(-1);
+            setCurrentIdx(-1);
+            setIsFullScreen(true);
+            setShowQR(true); // Auto-show PIN/QR Code logic
+            // alert(`Área Aberta! PIN: ${newPin}`);
+        } catch (error) {
+            console.error(error);
+            alert(`Erro ao abrir sala: ${error}`);
+        } finally {
+            setIsStarting(false);
+        }
+    };
+
+    const broadcastQuestion = async (index: number) => {
+        if (!selectedQuiz) return;
+        const question = selectedQuiz.questions[index];
+        // Use PIN if set, else main_event (backwards compat)
+        const path = gamePin ? `active_quizzes/${gamePin}` : 'active_quizzes/main_event';
+        const quizRef = ref(rtdb, path);
+
+        await update(quizRef, { // Use update instead of set to preserve other fields
+            status: 'in_progress',
+            currentQuestionIndex: index,
+            currentQuestion: {
+                id: question.id,
+                statement: question.statement,
+                alternatives: question.alternatives.map(a => a.text),
+                correctAnswer: question.alternatives.findIndex(a => a.isCorrect),
+                timeLimit: question.timeLimit,
+                xpValue: question.xpValue
+            },
+            questionStartTime: Date.now(),
+            showResults: false,
+            showLeaderboard: false
+        });
+        setCurrentIdx(index);
+        setIsResultsVisible(false);
+        setShowLeaderboard(false);
+    };
+
+    const toggleResults = async (show: boolean) => {
+        const path = gamePin ? `active_quizzes/${gamePin}` : 'active_quizzes/main_event';
+        await update(ref(rtdb, path), { showResults: show });
+        setIsResultsVisible(show);
+    };
+
+    const toggleLeaderboard = async () => {
+        const show = !showLeaderboard;
+        if (show) {
+            const leaders = await calculateLiveLeaderboard();
+            setLiveLeaderboard(leaders);
+        }
+
+        const path = gamePin ? `active_quizzes/${gamePin}` : 'active_quizzes/main_event';
+        await update(ref(rtdb, path), { showLeaderboard: show });
+        setShowLeaderboard(show);
+    };
+
+    const endQuiz = async () => {
+        if (!selectedQuiz) return;
+        setIsEnding(true);
+
+        try {
+            let activePin = gamePin;
+
+            // Resilience: If gamePin is lost (refresh), try to recover from main_event
+            if (!activePin) {
+                const mainSnap = await get(ref(rtdb, 'active_quizzes/main_event'));
+                if (mainSnap.exists()) {
+                    activePin = mainSnap.val().pin;
+                }
+            }
+
+            const path = activePin ? `active_quizzes/${activePin}` : 'active_quizzes/main_event';
+            const quizRTDBRef = ref(rtdb, path);
+            const answersRTDBRef = ref(rtdb, `${path}/answers`);
+
+            console.log(`Ending quiz at path: ${path}`);
+            const snapshot = await get(answersRTDBRef);
+            const allQuestionsAnswers = snapshot.val();
+            const scores: Record<string, { score: number, name: string }> = {};
+
+            if (allQuestionsAnswers) {
+                Object.values(allQuestionsAnswers).forEach((questionAnswers: any) => {
+                    Object.entries(questionAnswers).forEach(([userId, data]: [string, any]) => {
+                        if (!scores[userId]) {
+                            scores[userId] = { score: 0, name: data.userName || "Membro" };
+                        }
+                        if (data.isCorrect) {
+                            scores[userId].score += (data.xpValue || 100);
+                        }
+                    });
+                });
+
+                // Award XP in Firestore
+                const batchPromises = Object.entries(scores).map(async ([userId, data]) => {
+                    if (userId !== 'guest_user' && data.score > 0) {
+                        try {
+                            const userRef = doc(db, "users", userId);
+                            await updateDoc(userRef, {
+                                xp: increment(data.score),
+                                "stats.currentXp": increment(data.score)
+                            });
+                            await addDoc(collection(db, "users", userId, "xp_history"), {
+                                amount: data.score,
+                                type: 'quiz',
+                                taskTitle: `Área: ${selectedQuiz.title}`,
+                                createdAt: serverTimestamp(), // Consolidating with other history patterns
+                                reason: `Participação no Quiz: ${selectedQuiz.title}`
+                            });
+                        } catch (err) {
+                            console.error(`Error updating XP for user ${userId}:`, err);
+                        }
+                    }
+                });
+                await Promise.all(batchPromises);
+            }
+
+            const leaderboard = Object.entries(scores)
+                .map(([id, data]) => ({
+                    id,
+                    score: data.score,
+                    name: data.name
+                }))
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 5);
+
+            await update(quizRTDBRef, {
+                status: 'finished',
+                leaderboard: leaderboard
+            });
+
+            await firestoreService.add("quiz_history", {
+                date: new Date(),
+                quizTitle: selectedQuiz.title,
+                totalParticipants: Object.keys(scores).length,
+                leaderboard: leaderboard,
+                questionsCount: selectedQuiz.questions.length,
+                pin: activePin || null
+            });
+
+            try {
+                // Clear main_event pin reference too
+                await update(ref(rtdb, 'active_quizzes/main_event'), {
+                    status: 'finished',
+                    pin: null
+                });
+            } catch (e) { console.error("Error clearing main_event:", e); }
+
+            alert("Quiz encerrado com sucesso! Pontos e histórico atualizados.");
+            setCurrentIdx(-1);
+            setLiveStatus('finished');
+            setGamePin("");
+        } catch (error) {
+            console.error("Error ending quiz:", error);
+            alert("Erro ao finalizar quiz. Verifique o console.");
+        } finally {
+            setIsEnding(false);
+        }
+    };
+
+
+    if (user?.role === 'membro') {
+        const userCls = user?.classification || 'pre-adolescente'; // Fallback for members
+        const memberQuizzes = myQuizzes.filter(q => {
+            const isAvailable = q.availableToStudents === true;
+            const matchesClassification =
+                !q.classification ||
+                q.classification === 'todos' ||
+                q.classification === userCls;
+
+            // Isolation: only show global quizzes or quizzes from the user's base
+            const matchesBase = !q.baseId || q.baseId === user?.baseId;
+
+            return isAvailable && matchesClassification && matchesBase;
+        });
+
+        return (
+            <div className="space-y-8 pb-20">
+                {/* Header Member */}
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+                    <div className="relative z-10">
+                        <h1 className="text-3xl font-black mb-2">ÁREA DO QUIZ</h1>
+                        <p className="text-blue-100 mb-6 max-w-md">
+                            Entre em um jogo ao vivo com o PIN do seu professor ou treine com os quizzes disponíveis abaixo!
+                        </p>
+                        <Link href="/play">
+                            <Button className="bg-white text-primary hover:bg-blue-50 font-black px-8 py-6 rounded-2xl gap-3 text-lg shadow-lg">
+                                <Play size={24} fill="currentColor" />
+                                PLAY QUIZ (ENTRAR COM PIN)
+                            </Button>
+                        </Link>
+                    </div>
+                    <Gamepad2 size={200} className="absolute -right-10 -bottom-10 text-white/10 rotate-12" />
+                </div>
+
+                {/* List for Members */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                        <LayoutList className="text-primary" size={24} />
+                        <h2 className="text-xl font-bold">Quizzes para você</h2>
+                    </div>
+
+                    {loadingQuizzes ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {[1, 2, 3].map(i => <div key={i} className="h-48 bg-gray-100 rounded-2xl animate-pulse" />)}
+                        </div>
+                    ) : memberQuizzes.length === 0 ? (
+                        <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100">
+                            <MonitorPlay size={48} className="mx-auto text-gray-200 mb-4" />
+                            <p className="text-text-secondary">Nenhum quiz disponível no momento.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {memberQuizzes.map(quiz => (
+                                <div key={quiz.id} className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-xl transition-all group cursor-default">
+                                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
+                                        <Award size={24} />
+                                    </div>
+                                    <h3 className="font-bold text-lg mb-2">{quiz.title}</h3>
+                                    <p className="text-sm text-text-secondary line-clamp-2 mb-4">
+                                        {quiz.description || "Sem descrição disponível."}
+                                    </p>
+                                    <div className="flex items-center justify-between mt-6">
+                                        <div className="flex items-center gap-2 text-xs font-bold text-primary bg-primary/5 px-3 py-1 rounded-full">
+                                            <MessageSquare size={14} /> {quiz.questions.length} Perguntas
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            className="text-primary font-bold gap-1 hover:bg-primary/5"
+                                            onClick={() => setPlayingIndividualQuiz(quiz)}
+                                        >
+                                            Começar <ArrowRight size={16} />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {playingIndividualQuiz && (
+                    <IndividualQuizPlayer
+                        quiz={playingIndividualQuiz}
+                        userId={user?.uid!}
+                        onClose={() => setPlayingIndividualQuiz(null)}
+                    />
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6 pb-20">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight">PLAY QUIZ</h1>
+                    <p className="text-text-secondary">Crie quizzes e comande a área ao vivo.</p>
+                </div>
+                <div className="flex gap-2">
+                    <Button
+                        onClick={handleCreateClick}
+                        className="bg-primary hover:bg-primary/90 text-white gap-2"
+                    >
+                        <Plus size={20} /> Novo Quiz
+                    </Button>
+                </div>
+            </div>
+
+            {/* Navigation */}
+            <div className="flex gap-4 border-b border-gray-100">
+                <button
+                    onClick={() => setActiveTab("quizzes")}
+                    className={clsx(
+                        "pb-4 px-2 font-bold text-sm transition-all flex items-center gap-2",
+                        activeTab === "quizzes"
+                            ? "text-primary border-b-2 border-primary"
+                            : "text-text-secondary hover:text-text-primary"
+                    )}
+                >
+                    <LayoutList size={18} /> Meus Quizzes
+                </button>
+                <button
+                    onClick={() => setActiveTab("arena")}
+                    className={clsx(
+                        "pb-4 px-2 font-bold text-sm transition-all flex items-center gap-2",
+                        activeTab === "arena"
+                            ? "text-primary border-b-2 border-primary"
+                            : "text-text-secondary hover:text-text-primary"
+                    )}
+                >
+                    <MonitorPlay size={18} /> Play Quiz Ao Vivo
+                </button>
+                <button
+                    onClick={() => setActiveTab("history")}
+                    className={clsx(
+                        "pb-4 px-2 font-bold text-sm transition-all flex items-center gap-2",
+                        activeTab === "history"
+                            ? "text-primary border-b-2 border-primary"
+                            : "text-text-secondary hover:text-text-primary"
+                    )}
+                >
+                    <History size={18} /> Histórico
+                </button>
+            </div>
+
+            {/* Content Tab: Quizzes (List) */}
+            {activeTab === "quizzes" && (
+                <div className="space-y-6">
+                    {loadingQuizzes ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {[1, 2, 3].map(i => <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />)}
+                        </div>
+                    ) : myQuizzes.length === 0 ? (
+                        <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
+                            <Gamepad2 size={48} className="mx-auto text-gray-300 mb-4" />
+                            <h3 className="text-lg font-bold text-text-primary">Nenhum quiz criado</h3>
+                            <p className="text-text-secondary mb-4">Crie seu primeiro quiz para jogar na área.</p>
+                            <Button onClick={handleCreateClick}>Criar Quiz</Button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {myQuizzes.map(quiz => (
+                                <div key={quiz.id} className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between group">
+                                    <div>
+                                        <h3 className="font-bold text-lg mb-2">{quiz.title}</h3>
+                                        <p className="text-sm text-text-secondary line-clamp-2 mb-4">
+                                            {quiz.description || "Sem descrição"}
+                                        </p>
+                                        <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-text-secondary uppercase tracking-wider">
+                                            <span className="flex items-center gap-1">
+                                                <MessageSquare size={14} /> {quiz.questions.length} Q
+                                            </span>
+                                            <span className="flex items-center gap-1 text-primary">
+                                                <Award size={14} /> {quiz.questions.reduce((acc, q) => acc + (q.xpValue || 0), 0)} XP
+                                            </span>
+                                            <span className={clsx(
+                                                "px-2 py-0.5 rounded-full border",
+                                                quiz.classification === 'adolescente' ? "bg-indigo-100 text-indigo-700 border-indigo-200" :
+                                                    quiz.classification === 'pre-adolescente' ? "bg-teal-100 text-teal-700 border-teal-200" :
+                                                        "bg-gray-100 text-gray-700 border-gray-200"
+                                            )}>
+                                                {quiz.classification || 'todos'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 flex flex-col gap-2">
+                                        <Button
+                                            onClick={() => handleSelectForArena(quiz)}
+                                            className="w-full gap-2 bg-primary/10 text-primary hover:bg-primary hover:text-white border-none"
+                                        >
+                                            <Play size={18} /> Jogar na Área
+                                        </Button>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="flex-1"
+                                                onClick={() => handleEditClick(quiz)}
+                                            >
+                                                <Edit3 size={16} />
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="flex-1 text-error hover:bg-error/10 hover:border-error"
+                                                onClick={(e) => handleDeleteQuiz(quiz.id, e)}
+                                            >
+                                                <Trash2 size={16} />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Content Tab: Arena */}
+            {activeTab === "arena" && (
+                <div className="space-y-6">
+                    {!selectedQuiz ? (
+                        <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
+                            <MonitorPlay size={48} className="mx-auto text-gray-300 mb-4" />
+                            <h3 className="text-lg font-bold text-text-primary">Nenhum quiz selecionado</h3>
+                            <p className="text-text-secondary mb-4">Vá para a aba "Meus Quizzes" e clique em "Jogar na Área".</p>
+                            <Button onClick={() => setActiveTab("quizzes")}>Escolher Quiz</Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {/* Control Bar */}
+                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+                                <div>
+                                    <span className="text-xs font-bold text-primary uppercase tracking-wider mb-1 block">Quiz Selecionado</span>
+                                    <h2 className="text-2xl font-bold flex items-center gap-2">
+                                        {selectedQuiz.title}
+                                        <span className={clsx(
+                                            "text-xs px-2 py-1 rounded-full border",
+                                            liveStatus === 'in_progress' ? "bg-green-100 text-green-700 border-green-200" :
+                                                liveStatus === 'waiting' ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
+                                                    "bg-gray-100 text-gray-500 border-gray-200"
+                                        )}>
+                                            {liveStatus === 'idle' ? 'Inativo' : liveStatus === 'waiting' ? 'Aguardando' : liveStatus === 'in_progress' ? 'Ao Vivo' : 'Finalizado'}
+                                        </span>
+                                    </h2>
+                                    <p className="text-text-secondary text-sm">{selectedQuiz.questions.length} questões na fila</p>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    {liveStatus === 'idle' || liveStatus === 'finished' ? (
+                                        <Button onClick={startLiveQuiz} disabled={isStarting} className="bg-green-600 hover:bg-green-700 text-white gap-2 px-8">
+                                            <Play size={20} /> Abrir Sala
+                                        </Button>
+                                    ) : (
+                                        <>
+                                            <>
+                                                <Button variant="outline" onClick={() => setShowQR(true)} className="text-gray-700" title="Mostrar QR Code">
+                                                    <QrCode size={20} />
+                                                </Button>
+
+                                                {!isResultsVisible ? (
+                                                    <Button variant="outline" onClick={() => toggleResults(true)} title="Revelar Resposta" className="gap-2">
+                                                        <CheckCircle2 size={20} /> Revelar
+                                                    </Button>
+                                                ) : (
+                                                    <Button variant="outline" onClick={toggleLeaderboard} title={showLeaderboard ? "Voltar à Pergunta" : "Ver Ranking"} className="gap-2 bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100">
+                                                        <Award size={20} /> {showLeaderboard ? "Ocultar Ranking" : "Ranking"}
+                                                    </Button>
+                                                )}
+
+                                                <Button
+                                                    onClick={() => broadcastQuestion(currentIdx + 1)}
+                                                    disabled={currentIdx >= selectedQuiz.questions.length - 1}
+                                                    className="gap-2"
+                                                >
+                                                    Próxima <ArrowRight size={20} />
+                                                </Button>
+                                                <Button variant="danger" onClick={endQuiz}>
+                                                    Encerrar
+                                                </Button>
+                                            </>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Live View */}
+                            {liveStatus !== 'idle' && (
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    {/* Question Card */}
+                                    <div className="lg:col-span-2 space-y-4">
+                                        <div className="card-soft p-6 bg-white relative overflow-hidden">
+                                            {currentIdx >= 0 ? (
+                                                <div className="space-y-6">
+                                                    <div className="flex justify-between items-start">
+                                                        <span className="bg-primary/10 text-primary font-bold px-3 py-1 rounded-full text-xs">
+                                                            Questão {currentIdx + 1}/{selectedQuiz.questions.length}
+                                                        </span>
+                                                        <div className="text-right">
+                                                            <div className="font-bold text-2xl text-primary">{selectedQuiz.questions[currentIdx].xpValue} XP</div>
+                                                            <div className="text-xs text-text-secondary">{selectedQuiz.questions[currentIdx].timeLimit}s</div>
+                                                        </div>
+                                                    </div>
+                                                    <h3 className="text-xl font-bold">{selectedQuiz.questions[currentIdx].statement}</h3>
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {selectedQuiz.questions[currentIdx].alternatives.map((alt, idx) => {
+                                                            const count = stats[idx] || 0;
+                                                            const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
+                                                            return (
+                                                                <div key={idx} className={clsx(
+                                                                    "p-6 rounded-2xl border-2 relative overflow-hidden transition-all h-24 flex items-center",
+                                                                    (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-100" : "bg-white border-gray-100"
+                                                                )}>
+                                                                    {isResultsVisible && (
+                                                                        <div
+                                                                            className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
+                                                                            style={{ width: `${percentage}%` }}
+                                                                        />
+                                                                    )}
+                                                                    <div className="relative z-10 flex justify-between items-center w-full">
+                                                                        <span className="font-bold text-xl flex items-center gap-3">
+                                                                            <span className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm">{String.fromCharCode(65 + idx)}</span>
+                                                                            {alt.text}
+                                                                        </span>
+                                                                        {isResultsVisible && <span className="font-black text-2xl">{Math.round(percentage)}%</span>}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-10">
+                                                    <h3 className="text-xl font-bold text-primary animate-pulse">Aguardando início...</h3>
+                                                    <p className="text-text-secondary">Os participantes estão entrando na sala.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Sidebar Stats (Inline only) */}
+                                    {!isFullScreen && (
+                                        <div className="space-y-4">
+                                            <div className="bg-primary text-white p-6 rounded-2xl text-center">
+                                                <UsersIcon size={32} className="mx-auto mb-2 opacity-80" />
+                                                <div className="text-4xl font-black">{totalAnswers}</div>
+                                                <div className="text-sm opacity-80 uppercase tracking-widest font-bold">Respostas</div>
+                                            </div>
+                                            <Button
+                                                onClick={() => setIsFullScreen(true)}
+                                                className="w-full py-6 text-lg gap-2 bg-gray-900 text-white hover:bg-black"
+                                            >
+                                                <Maximize2 size={24} /> Tela Cheia
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Full Screen Overlay */}
+                            {isFullScreen && (
+                                <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col">
+                                    {/* Top Bar */}
+                                    <div className="bg-white p-4 shadow-md flex justify-between items-center shrink-0">
+                                        <div className="flex items-center gap-4">
+                                            <h2 className="text-xl font-bold">{selectedQuiz?.title}</h2>
+                                            <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">
+                                                {currentIdx + 1}/{selectedQuiz?.questions.length}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-center">
+                                                <span className="block text-2xl font-black text-primary">{totalAnswers}</span>
+                                                <span className="text-[10px] font-bold text-gray-400 uppercase">Respostas</span>
+                                            </div>
+                                            <Button variant="ghost" onClick={() => setIsFullScreen(false)}>
+                                                <Minimize2 size={24} />
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {/* Main Content Area */}
+                                    <div className="flex-1 p-8 flex flex-col overflow-hidden">
+                                        <div className="flex-1 bg-white rounded-3xl shadow-lg border border-gray-200 overflow-hidden relative flex flex-col">
+                                            {/* Reuse same logic for Leaderboard/Question View */}
+                                            {showLeaderboard ? (
+                                                <div className="flex-1 flex flex-col items-center justify-center p-12 bg-gray-50/50">
+                                                    <div className="text-center mb-8">
+                                                        <h3 className="text-4xl font-black text-primary uppercase tracking-widest mb-2">Ranking</h3>
+                                                        <div className="w-24 h-2 bg-yellow-400 mx-auto rounded-full" />
+                                                    </div>
+                                                    <div className="space-y-4 w-full max-w-3xl">
+                                                        {liveLeaderboard.map((player, idx) => (
+                                                            <div key={idx} className={clsx(
+                                                                "flex items-center justify-between p-6 rounded-2xl border-2 transform transition-all",
+                                                                idx === 0 ? "bg-yellow-50 border-yellow-400 scale-105 shadow-xl" :
+                                                                    idx === 1 ? "bg-gray-50 border-gray-300 scale-100 shadow-md" :
+                                                                        idx === 2 ? "bg-orange-50 border-orange-300 scale-100 shadow-sm" :
+                                                                            "bg-white border-gray-100"
+                                                            )}>
+                                                                <div className="flex items-center gap-6">
+                                                                    <div className={clsx(
+                                                                        "w-12 h-12 rounded-full flex items-center justify-center font-black text-2xl text-white",
+                                                                        idx === 0 ? "bg-yellow-400" :
+                                                                            idx === 1 ? "bg-gray-400" :
+                                                                                idx === 2 ? "bg-orange-400" : "bg-primary/20 text-primary"
+                                                                    )}>
+                                                                        {idx + 1}
+                                                                    </div>
+                                                                    <span className="font-bold text-3xl">{player.name}</span>
+                                                                </div>
+                                                                <div className="font-black text-4xl text-primary">{player.score} XP</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex-1 flex flex-col">
+                                                    {/* Question Text */}
+                                                    <div className="bg-white p-8 border-b flex items-center justify-center min-h-[200px]">
+                                                        <h3 className="text-4xl md:text-5xl font-black text-center leading-tight">
+                                                            {selectedQuiz?.questions[currentIdx]?.statement}
+                                                        </h3>
+                                                    </div>
+
+                                                    {/* Alternatives Grid */}
+                                                    <div className="flex-1 grid grid-cols-2 gap-4 p-8 bg-gray-50">
+                                                        {selectedQuiz?.questions[currentIdx]?.alternatives.map((alt, idx) => {
+                                                            const count = stats[idx] || 0;
+                                                            const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
+                                                            return (
+                                                                <div key={idx} className={clsx(
+                                                                    "rounded-2xl border-4 relative overflow-hidden transition-all flex items-center px-8 shadow-sm",
+                                                                    (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-200" : "bg-white border-gray-200"
+                                                                )}>
+                                                                    {isResultsVisible && (
+                                                                        <div
+                                                                            className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
+                                                                            style={{ width: `${percentage}%` }}
+                                                                        />
+                                                                    )}
+                                                                    <div className="relative z-10 flex justify-between items-center w-full">
+                                                                        <div className="flex items-center gap-6">
+                                                                            <div className={clsx(
+                                                                                "w-16 h-16 rounded-lg flex items-center justify-center text-4xl text-white font-black shadow-inner border-2 border-white/20",
+                                                                                idx % 4 === 0 ? "bg-red-500" : idx % 4 === 1 ? "bg-blue-500" : idx % 4 === 2 ? "bg-yellow-500" : "bg-green-500"
+                                                                            )}>
+                                                                                {["A", "B", "C", "D"][idx % 4]}
+                                                                            </div>
+                                                                            <span className="font-bold text-3xl">{alt.text}</span>
+                                                                        </div>
+                                                                        {isResultsVisible && <span className="font-black text-4xl">{Math.round(percentage)}%</span>}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Bottom Control Bar */}
+                                    <div className="bg-white p-6 border-t border-gray-200 flex justify-center gap-4 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+                                        {!isResultsVisible ? (
+                                            <Button onClick={() => toggleResults(true)} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-primary text-white hover:bg-primary/90 shadow-xl hover:scale-105 transition-all">
+                                                <CheckCircle2 size={32} /> Revelar Resposta
+                                            </Button>
+                                        ) : (
+                                            <Button onClick={toggleLeaderboard} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 hover:bg-yellow-300 shadow-xl hover:scale-105 transition-all">
+                                                <Award size={32} /> {showLeaderboard ? "Ocultar Ranking" : "Ver Ranking"}
+                                            </Button>
+                                        )}
+
+                                        <Button
+                                            onClick={() => broadcastQuestion(currentIdx + 1)}
+                                            disabled={currentIdx >= (selectedQuiz?.questions.length || 0) - 1}
+                                            className="h-16 px-12 text-xl gap-3 rounded-2xl bg-gray-800 text-white hover:bg-black hover:scale-105 transition-all"
+                                        >
+                                            Próxima <ArrowRight size={32} />
+                                        </Button>
+
+                                        <Button variant="danger" onClick={endQuiz} className="h-16 px-8 rounded-2xl">
+                                            Encerrar
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* QR Code Modal for Big Screen */}
+                            {showQR && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowQR(false)}>
+                                    <div className="bg-white p-8 rounded-3xl shadow-2xl scale-in-center flex flex-col items-center gap-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+                                        <div className="text-center">
+                                            <h3 className="text-2xl font-black text-gray-900 mb-2">Entre na Área!</h3>
+                                            <p className="text-gray-500">Escaneie ou acesse <strong>baseteen-admin.vercel.app/play</strong></p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border-2 border-primary/20 shadow-inner">
+                                            <QRCode
+                                                value={`https://baseteen-admin.vercel.app/play?code=${gamePin}`}
+                                                size={200}
+                                                viewBox={`0 0 256 256`}
+                                                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                            />
+                                        </div>
+                                        <div className="text-center w-full">
+                                            <p className="text-sm text-gray-400 mb-2">PIN DO JOGO</p>
+                                            <div className="bg-gray-100 p-4 rounded-xl text-4xl font-black tracking-[0.5em] text-center w-full text-gray-800">
+                                                {gamePin || "------"}
+                                            </div>
+                                        </div>
+                                        <Button className="w-full h-12" onClick={() => setShowQR(false)}>
+                                            Fechar
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Content Tab: History */}
+            {
+                activeTab === "history" && (
+                    <div className="space-y-6">
+                        {loadingHistory ? (
+                            <div className="space-y-4">
+                                {[1, 2, 3].map(i => <div key={i} className="card-soft p-12 animate-pulse" />)}
+                            </div>
+                        ) : history.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-6">
+                                {history.sort((a, b) => b.date?.seconds - a.date?.seconds).map((entry) => (
+                                    <div key={entry.id} className="card-soft overflow-hidden border-l-4 border-l-primary hover:shadow-lg transition-all">
+                                        <div className="p-6 bg-white border-b border-gray-50 flex flex-col md:flex-row justify-between gap-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                                                    <Calendar size={24} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-lg">{entry.quizTitle || "Quiz Sem Título"}</h3>
+                                                    <p className="text-text-secondary text-sm flex items-center gap-2">
+                                                        {entry.date?.toDate ? entry.date.toDate().toLocaleDateString('pt-BR') : "Data N/A"} • {entry.questionsCount} Questões
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="text-center md:text-right">
+                                                <p className="text-2xl font-black text-primary">{entry.totalParticipants}</p>
+                                                <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Participantes</p>
+                                            </div>
+                                        </div>
+                                        {/* Podium preview could go here */}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
+                                <History size={48} className="mx-auto text-gray-300 mb-4" />
+                                <h3 className="text-lg font-bold text-text-primary">Nenhum histórico</h3>
+                            </div>
+                        )}
+                    </div>
+                )
+            }
+
+            {/* Modal de Criação/Edição */}
+            {
+                isModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl scale-in-center">
+                            <div className="p-6 bg-primary text-white flex justify-between items-center shrink-0">
+                                <div>
+                                    <h2 className="text-xl font-bold">{editingId ? "Editar Quiz" : "Criar Novo Quiz"}</h2>
+                                    <p className="text-white/70 text-sm">Configure as perguntas e detalhes do desafio.</p>
+                                </div>
+                                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Título do Quiz</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-surface border-none rounded-xl p-4 focus:ring-2 focus:ring-primary/20 font-bold"
+                                            placeholder="Ex: Área da Vitória"
+                                            value={formData.title}
+                                            onChange={e => setFormData({ ...formData, title: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Classificação</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-4 focus:ring-2 focus:ring-primary/20 font-bold"
+                                            value={formData.classification}
+                                            onChange={e => setFormData({ ...formData, classification: e.target.value as any })}
+                                        >
+                                            <option value="todos">Todos</option>
+                                            <option value="pre-adolescente">Pre-adolescente</option>
+                                            <option value="adolescente">Adolescente</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Descrição (Opcional)</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-surface border-none rounded-xl p-4 focus:ring-2 focus:ring-primary/20"
+                                            placeholder="Ex: Especial de férias"
+                                            value={formData.description}
+                                            onChange={e => setFormData({ ...formData, description: e.target.value })}
+                                        />
+                                    </div>
+
+                                    {/* Opção de Visibilidade para Alunos (Apenas se tiver baseId ou for Admin/Master para testes) */}
+                                    {(user?.role === 'coord_base' || user?.role === 'master' || user?.role === 'admin') && (
+                                        <div className="md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-4">
+                                            <input
+                                                type="checkbox"
+                                                id="availableToStudents"
+                                                className="w-5 h-5 text-primary rounded focus:ring-primary"
+                                                checked={formData.availableToStudents}
+                                                onChange={e => setFormData({ ...formData, availableToStudents: e.target.checked })}
+                                            />
+                                            <label htmlFor="availableToStudents" className="cursor-pointer">
+                                                <span className="block font-bold text-gray-900">Disponibilizar para Alunos da Base?</span>
+                                                <span className="text-sm text-text-secondary">Se marcado, os alunos da sua base verão este quiz na lista de atividades.</span>
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="border-t pt-6">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h3 className="font-bold text-lg flex items-center gap-2">
+                                            <MessageSquare size={20} /> Perguntas ({formData.questions.length})
+                                        </h3>
+                                        <div className="flex gap-2">
+                                            <Button variant="outline" onClick={handleDownloadTemplate} title="Baixar Modelo" size="sm">
+                                                <FileSpreadsheet size={16} />
+                                            </Button>
+                                            <label>
+                                                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleImportExcel} />
+                                                <div className="h-9 px-3 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-2 text-sm font-bold transition-colors">
+                                                    <Upload size={16} /> Importar Excel
+                                                </div>
+                                            </label>
+                                            <Button onClick={addQuestion} size="sm" className="gap-2">
+                                                <Plus size={16} /> Adicionar
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        {formData.questions.map((q, qIdx) => (
+                                            <div key={q.id || qIdx} className="bg-gray-50 rounded-2xl p-6 relative border border-gray-100 group">
+                                                <button
+                                                    onClick={() => removeQuestion(qIdx)}
+                                                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-error hover:bg-error/10 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+
+                                                <div className="space-y-4 pr-10">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-text-secondary uppercase mb-1 block">Enunciado</label>
+                                                        <textarea
+                                                            className="w-full bg-white border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 min-h-[60px]"
+                                                            value={q.statement}
+                                                            onChange={e => updateQuestion(qIdx, 'statement', e.target.value)}
+                                                            placeholder="Digite a pergunta..."
+                                                        />
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="text-xs font-bold text-text-secondary uppercase mb-1 block">Tempo (s)</label>
+                                                            <input
+                                                                type="number"
+                                                                className="w-full bg-white border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                                                value={q.timeLimit}
+                                                                onChange={e => updateQuestion(qIdx, 'timeLimit', parseInt(e.target.value))}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-bold text-text-secondary uppercase mb-1 block">XP</label>
+                                                            <input
+                                                                type="number"
+                                                                className="w-full bg-white border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                                                value={q.xpValue}
+                                                                onChange={e => updateQuestion(qIdx, 'xpValue', parseInt(e.target.value))}
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <label className="text-xs font-bold text-text-secondary uppercase block">Alternativas</label>
+                                                        {q.alternatives.map((alt, aIdx) => (
+                                                            <div key={aIdx} className="flex items-center gap-3">
+                                                                <button
+                                                                    onClick={() => setCorrectAlternative(qIdx, aIdx)}
+                                                                    className={clsx(
+                                                                        "w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                                                                        alt.isCorrect ? "bg-green-500 border-green-500 text-white" : "border-gray-300 hover:border-green-300"
+                                                                    )}
+                                                                >
+                                                                    {alt.isCorrect ? <CheckCircle2 size={16} /> : <span className="text-xs font-bold text-gray-400">{String.fromCharCode(65 + aIdx)}</span>}
+                                                                </button>
+                                                                <input
+                                                                    type="text"
+                                                                    className={clsx(
+                                                                        "flex-1 bg-white border-none rounded-lg p-2 focus:ring-2 focus:ring-primary/20 text-sm",
+                                                                        alt.isCorrect && "font-bold text-green-700 bg-green-50"
+                                                                    )}
+                                                                    value={alt.text}
+                                                                    onChange={e => updateAlternative(qIdx, aIdx, e.target.value)}
+                                                                    placeholder={`Alternativa ${String.fromCharCode(65 + aIdx)}`}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-6 bg-white border-t border-gray-100 flex gap-4 shrink-0">
+                                <Button variant="outline" className="flex-1 py-4" onClick={() => setIsModalOpen(false)}>
+                                    Cancelar
+                                </Button>
+                                <Button className="flex-1 py-4 gap-2" onClick={handleSaveQuiz}>
+                                    <Save size={20} /> Salvar Quiz
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div>
+    );
+}

@@ -1,0 +1,284 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Funções Auxiliares ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Obtém dados do usuário atual (Custa 1 leitura)
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Checks de Role
+    // Checks de Role (Prioriza Custom Claims)
+    function hasRole(role) {
+      return (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == role) ||
+             (isSignedIn() 
+              && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role);
+    }
+    
+    function isOwnerOrAdmin() {
+      // MASTER EMAIL HARDCODED: Case insensitive + fallback to roles
+      return (request.auth.token.email.lower() == 'master@baseteen.com') 
+             || request.auth.token.role == 'master'
+             || request.auth.token.role == 'admin'
+             || hasRole('master') 
+             || hasRole('admin') 
+             || hasRole('coord_geral');
+    }
+    
+    function isSecretary() {
+      return request.auth.token.role == 'secretaria' || hasRole('secretaria') || isOwnerOrAdmin();
+    }
+    
+    // Hierarquia
+    function isDistrictCoord() {
+      return request.auth.token.role == 'coord_distrital' || hasRole('coord_distrital');
+    }
+    
+    function isBaseCoord() {
+      return request.auth.token.role == 'coord_base' || hasRole('coord_base');
+    }
+
+    // Acesso Hierárquico para Leitura/Escrita de Submissões e Usuários
+    function canManageArea(docData) {
+      let targetBaseId = docData.baseId || docData.userBaseId;
+      let targetDistrictId = docData.districtId || docData.userDistrictId;
+      
+      return isOwnerOrAdmin() ||
+             // Check Claims First
+             (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == targetDistrictId) ||
+             (request.auth.token.role == 'coord_base' && request.auth.token.baseId == targetBaseId) ||
+             // Fallback to Doc Read
+             (
+                getUserData().role == 'coord_distrital' && getUserData().districtId == targetDistrictId
+             ) ||
+             (
+                getUserData().role == 'coord_base' && getUserData().baseId == targetBaseId
+             );
+    }
+    
+    // --- Regras por Coleção ---
+
+    // USERS
+    match /users/{userId} {
+      allow read: if isOwnerOrAdmin() || isSecretary() || 
+                  request.auth.uid == userId ||
+                  (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId) ||
+                  (isBaseCoord() && resource.data.baseId == request.auth.token.baseId) ||
+                  (hasRole('membro') && resource.data.baseId == request.auth.token.baseId); // Members see their base peers
+
+      // Criação: Admins ou Coordenadores (Hierarquia)
+      allow create: if isOwnerOrAdmin() || isSecretary() || 
+                    // Coord Distrital: Can create Base Coords or Members in their district
+                    (isDistrictCoord() && request.resource.data.districtId == request.auth.token.districtId && 
+                      (request.resource.data.role == 'membro' || request.resource.data.role == 'coord_base')) ||
+                    // Coord Base: Can create Members in their base
+                    (isBaseCoord() && request.resource.data.baseId == request.auth.token.baseId && request.resource.data.role == 'membro') ||
+                    // Self-registration (if enabled/applicable logic)
+                    (request.auth.uid == userId && 
+                      (request.resource.data.role == 'membro' || request.auth.token.email == 'master@baseteen.com'));
+      
+      
+      // Update: Dono, Secretaria, Coord da área ou o próprio usuário
+      allow update: if isOwnerOrAdmin() || isSecretary() ||
+                    // Check token claims first (0 reads)
+                    (request.auth.token.role == 'coord_base' && request.auth.token.baseId == resource.data.baseId) ||
+                    (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == resource.data.districtId) ||
+                    // Fallback to expensive check
+                    canManageArea(resource.data) ||
+                    // Allow Coordinators to update XP/Stats for any participant (e.g. Visitors)
+                    ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
+                    (request.auth.uid == userId && 
+                      (request.resource.data.role == 'membro' || 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking']) ||
+                       request.auth.token.email == 'master@baseteen.com'));
+
+      // Delete: Admin or Owner only
+      allow delete: if isOwnerOrAdmin();
+      
+      // Subcoleção XP History
+      match /xp_history/{historyId} {
+        // Strict Read: User themselves, or their managers.
+        allow read: if request.auth.uid == userId || 
+                    isOwnerOrAdmin() || isSecretary() ||
+                    (isDistrictCoord() && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
+                    (isBaseCoord() && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId);
+        
+        // Write: Managers or User (for own actions if needed)
+        allow write: if isOwnerOrAdmin() || isSecretary() ||
+                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
+                      (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
+                      request.auth.uid == userId; 
+      }
+      
+      // Subcoleção Reading Progress
+      match /reading_progress/{planId} {
+        allow read: if request.auth.uid == userId || isOwnerOrAdmin();
+        allow write: if request.auth.uid == userId || isOwnerOrAdmin();
+      }
+    }
+
+    // TASKS (Requisitos)
+    match /tasks/{taskId} {
+      allow read: if isSignedIn();
+      allow create: if isOwnerOrAdmin() || isSecretary() ||
+                    (isDistrictCoord() && request.resource.data.districtId == getUserData().districtId) ||
+                    (isBaseCoord() && request.resource.data.baseId == getUserData().baseId);
+      allow update, delete: if isOwnerOrAdmin() || isSecretary() ||
+                            (isDistrictCoord() && resource.data.districtId == getUserData().districtId) ||
+                            (isBaseCoord() && resource.data.baseId == getUserData().baseId);
+    }
+
+    // SETTINGS (Gamification/Reading)
+    match /settings/{docId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin();
+    }
+
+    // DISTRICTS & BASES (Estrutura)
+    match /districts/{dId} {
+        // District Coords can create districts (as requested) and read their own
+        allow read: if isOwnerOrAdmin() || isSecretary() ||
+                    (isSignedIn() && resource.id == request.auth.token.districtId);
+        allow create: if isOwnerOrAdmin() || isDistrictCoord(); 
+        allow write: if isOwnerOrAdmin(); // Update/Delete restricted
+    }
+    match /bases/{bId} {
+        // Bases restricted by hierarchy
+        allow read: if isOwnerOrAdmin() || isSecretary() ||
+                    (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId) ||
+                    (isBaseCoord() && resource.id == request.auth.token.baseId) ||
+                    (hasRole('membro') && resource.id == request.auth.token.baseId);
+        
+        // District Coords can create Bases in their district
+        allow create: if isOwnerOrAdmin() || 
+                      (isDistrictCoord() && request.resource.data.districtId == request.auth.token.districtId);
+        
+        allow write: if isOwnerOrAdmin() || 
+                     (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId);
+    }
+
+    // SUBMISSIONS (Provas)
+    match /submissions/{submissionId} {
+      allow read: if isOwnerOrAdmin() || isSecretary() || 
+                  (isSignedIn() && resource.data.userId == request.auth.uid) ||
+                  canManageArea(resource.data);
+      
+      allow create: if isSignedIn() 
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'pending';
+                    
+      allow update, delete: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
+    }
+    
+    // NOTIFICATIONS
+    match /notifications/{notifId} {
+        allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+        allow create: if isOwnerOrAdmin() || isSecretary() || canManageArea(get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data) || request.resource.data.userId == request.auth.uid;
+        allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // QUIZ QUESTIONS
+    match /quiz_questions/{questionId} {
+      allow read: if isSignedIn();
+      allow write: if isOwnerOrAdmin();
+    }
+    
+    // QUIZ HISTORY (Resultados)
+    match /quiz_history/{historyId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin() || isDistrictCoord() || isBaseCoord();
+    }
+
+    // MASTER QUIZZES (Play Quiz / Arena)
+    match /master_quizzes/{quizId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin() || isBaseCoord();
+    }
+
+    // LOGS
+    // LOGS
+    match /system_logs/{logId} {
+      allow read: if isOwnerOrAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // --- ATTENDANCE & CRM ---
+    
+    // Quarters (Trimestres - Datas do Master)
+    match /quarters/{quarterId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin();
+    }
+
+    // Attendance Config (Pontuação por Base)
+    match /bases/{baseId}/attendance_config/{configId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin() || isSecretary() || (isBaseCoord() && getUserData().baseId == baseId);
+    }
+
+    // Attendance Records (A Chamada em si)
+    match /attendance_days/{dayId} {
+        allow read: if isSignedIn();
+        
+        allow create: if isOwnerOrAdmin() || isSecretary() || 
+                      // Check token claims first (0 reads)
+                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == request.resource.data.baseId) ||
+                      // Fallback to DB read
+                      (isBaseCoord() && getUserData().baseId == request.resource.data.baseId);
+                      
+        allow update: if isOwnerOrAdmin() || isSecretary() || 
+                      // Check token claims first
+                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == resource.data.baseId) ||
+                      // Fallback to DB read
+                      (isBaseCoord() && resource.data.baseId == getUserData().baseId);
+                      
+        allow delete: if isOwnerOrAdmin() || isSecretary() || 
+                      // Check token claims first
+                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == resource.data.baseId) ||
+                      // Fallback to DB read
+                      (isBaseCoord() && resource.data.baseId == getUserData().baseId);
+    }
+
+    // Subscriptions Collection
+    match /subscriptions/{subscriptionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwnerOrAdmin();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    // Payments Collection
+    match /payments/{paymentId} {
+      allow read, write: if isOwnerOrAdmin();
+    }
+
+    // Base Quizzes Collection
+    match /base_quizzes/{quizId} {
+      allow read: if isSignedIn();
+      allow create: if isOwnerOrAdmin() || isSecretary() || isBaseCoord() || isDistrictCoord();
+      allow update, delete: if isOwnerOrAdmin() || 
+                             (isBaseCoord() && resource.data.baseId == request.auth.token.baseId) ||
+                             (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId);
+    }
+
+    // Base Quiz Attempts
+    match /base_quiz_attempts/{attemptId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isOwnerOrAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        isOwnerOrAdmin() || 
+        isSecretary() ||
+        (isBaseCoord() && resource.data.baseId == request.auth.token.baseId) ||
+        (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId)
+      );
+    }
+  }
+}

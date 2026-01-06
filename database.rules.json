@@ -1,0 +1,8 @@
+{
+    "rules": {
+        ".read": true,
+        "active_quizzes": {
+            ".write": "auth != null"
+        }
+    }
+}

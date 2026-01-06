@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2A8AC9;
+  --color-success: #7DB845;
+  --color-warning: #F5B142;
+  --color-error: #E83F47;
+  --color-surface: #F8F9FA;
+  --color-background: #FFFFFF;
+  --color-text-primary: #212529;
+  --color-text-secondary: #6C757D;
+}
+
+:root {
+  --background: #FFFFFF;
+  --foreground: #212529;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.card-soft {
+  @apply bg-white rounded-2xl shadow-[0_4px_20px_0_rgba(0,0,0,0.05)] border border-gray-100;
+}
+
