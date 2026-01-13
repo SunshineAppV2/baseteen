@@ -209,7 +209,7 @@ export default function ReportsPage() {
                     <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10">
                         <div className="flex items-start gap-3">
                             <CheckCircle2 className="text-primary shrink-0" size={20} />
-                            <p className="text-sm text-text-primary">
+                            <p className="text-base text-text-primary">
                                 <strong>Dica:</strong> O relatório em Excel é ideal para auditoria, enquanto o PDF é formatado para impressão e apresentações.
                             </p>
                         </div>

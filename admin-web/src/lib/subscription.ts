@@ -43,12 +43,13 @@ export async function canAddMember(baseId: string): Promise<{
     reason?: string;
 }> {
     const subscription = await getSubscription(baseId);
+    const liveCount = await getCurrentMemberCount(baseId);
 
     if (!subscription) {
         // No subscription found - allow for now (grace period or initial setup)
         return {
             canAdd: true,
-            currentCount: 0,
+            currentCount: liveCount,
             memberLimit: 999, // Unlimited until subscription is created
             reason: 'No subscription found'
         };
@@ -58,7 +59,7 @@ export async function canAddMember(baseId: string): Promise<{
     if (subscription.status !== 'active') {
         return {
             canAdd: false,
-            currentCount: subscription.currentMemberCount,
+            currentCount: liveCount,
             memberLimit: subscription.memberLimit,
             reason: 'Subscription is not active'
         };
@@ -68,17 +69,17 @@ export async function canAddMember(baseId: string): Promise<{
     if (subscription.endDate < new Date()) {
         return {
             canAdd: false,
-            currentCount: subscription.currentMemberCount,
+            currentCount: liveCount,
             memberLimit: subscription.memberLimit,
             reason: 'Subscription has expired'
         };
     }
 
     // Check member limit
-    if (subscription.currentMemberCount >= subscription.memberLimit) {
+    if (liveCount >= subscription.memberLimit) {
         return {
             canAdd: false,
-            currentCount: subscription.currentMemberCount,
+            currentCount: liveCount,
             memberLimit: subscription.memberLimit,
             reason: 'Member limit reached'
         };
@@ -86,7 +87,7 @@ export async function canAddMember(baseId: string): Promise<{
 
     return {
         canAdd: true,
-        currentCount: subscription.currentMemberCount,
+        currentCount: liveCount,
         memberLimit: subscription.memberLimit
     };
 }
@@ -99,7 +100,7 @@ export async function getCurrentMemberCount(baseId: string): Promise<number> {
         const usersQuery = query(
             collection(db, 'users'),
             where('baseId', '==', baseId),
-            where('role', '==', 'membro')
+            where('status', '==', 'approved')
         );
 
         const snapshot = await getDocs(usersQuery);

@@ -266,6 +266,22 @@ export default function AttendanceSheet({ date, baseId, onClose }: AttendanceShe
                 }
             }
 
+            // 2. Update Base Total XP (for Ranking)
+            const totalDelta = members.reduce((sum, member) => {
+                const oldPoints = calculateUserPoints(originalRecords[member.id]);
+                const newPoints = calculateUserPoints(records[member.id]);
+                return sum + (newPoints - oldPoints);
+            }, 0);
+
+            if (totalDelta !== 0) {
+                const baseRef = doc(db, "bases", baseId);
+                effects.push({
+                    type: 'user_update',
+                    ref: baseRef,
+                    data: { totalXp: increment(totalDelta) }
+                });
+            }
+
             // Execute in chunks of 50 to avoid "Rule evaluation limit" or "Batch limit"
             const chunkSize = 50;
             for (let i = 0; i < effects.length; i += chunkSize) {

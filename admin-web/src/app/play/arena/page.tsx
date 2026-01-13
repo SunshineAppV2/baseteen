@@ -169,12 +169,12 @@ export default function ArenaPage() {
 
             {/* Question Statement (Optional - Kahoot usually hides it on phone, but helpful here) */}
             <div className="bg-white p-6 m-4 mt-4 rounded-2xl shadow-sm border-2 border-gray-100 text-center flex-1 flex items-center justify-center">
-                <p className="text-xl md:text-2xl font-bold text-gray-800">{question.statement}</p>
+                <p className="text-2xl md:text-4xl font-black text-gray-800">{question.statement}</p>
             </div>
 
             {/* Options Grid */}
             <div className="p-4 grid grid-cols-1 gap-4 mb-4">
-                {question.alternatives.map((alt: string, idx: number) => (
+                {question.alternatives.filter((alt: any) => (typeof alt === 'string' ? alt.trim() : alt.text?.trim())).map((alt: any, idx: number) => (
                     <button
                         key={idx}
                         onClick={() => submitAnswer(idx)}

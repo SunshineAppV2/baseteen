@@ -12,13 +12,17 @@ import {
     CalendarCheck,
     X,
     Trash2,
-    Filter
+    Filter,
+    Share2,
+    Copy,
+    CheckCircle
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { firestoreService } from "@/hooks/useFirestore";
 import { writeBatch, doc } from "firebase/firestore";
 import { db } from "@/services/firebase";
+import { clsx } from "clsx";
 import {
     BarChart,
     Bar,
@@ -72,12 +76,16 @@ import { where } from "firebase/firestore";
 import { useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 
+import { useRouter } from "next/navigation";
+
 export default function DashboardPage() {
     const { user: currentUser, loading: authLoading } = useAuth();
+    const router = useRouter();
     const [selectedStat, setSelectedStat] = useState<string | null>(null);
     const [modalData, setModalData] = useState<Submission[]>([]);
     const [modalTitle, setModalTitle] = useState("");
     const [filterBase, setFilterBase] = useState<string>("all");
+    const [copiedLink, setCopiedLink] = useState(false);
 
     const userConstraints = useMemo(() => {
         if (!currentUser) return []; // Should ideally fetch nothing if not auth, but rules handle it
@@ -175,7 +183,7 @@ export default function DashboardPage() {
             icon: Clock,
             color: "bg-orange-500/10 text-orange-600",
             trend: pendingCount > 0 ? "Ação necessária" : "Tudo em dia",
-            action: () => window.location.href = "/approvals"
+            action: () => router.push("/approvals")
         },
         {
             key: "approved",
@@ -260,6 +268,30 @@ export default function DashboardPage() {
         }
     };
 
+    const handleCopyInvite = () => {
+        if (!currentUser) return;
+
+        const baseUrl = window.location.origin + "/login";
+        const params = new URLSearchParams({
+            unionId: currentUser.unionId || "",
+            associationId: currentUser.associationId || "",
+            regionId: currentUser.regionId || "",
+            districtId: currentUser.districtId || "",
+            baseId: currentUser.baseId || ""
+        });
+
+        // Find program from current user bases or default
+        const currentBase = bases.find(b => b.id === currentUser.baseId);
+        if (currentBase && (currentBase as any).program) {
+            params.append('program', (currentBase as any).program);
+        }
+
+        const link = `${baseUrl}?${params.toString()}`;
+        navigator.clipboard.writeText(link);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+    };
+
     return (
         <div className="space-y-8">
             <div className="flex justify-between items-end">
@@ -269,10 +301,22 @@ export default function DashboardPage() {
                         Visão geral do engajamento e desempenho por distrito.
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col md:flex-row gap-3">
+                    {((currentUser?.role === 'coord_base' && currentUser.baseId) || currentUser?.role === 'master') && (
+                        <Button
+                            onClick={handleCopyInvite}
+                            className={clsx(
+                                "h-auto py-2.5 px-4 font-bold transition-all flex items-center gap-2 shadow-sm rounded-xl border-none",
+                                copiedLink ? "bg-green-500 text-white" : "bg-primary text-white hover:bg-primary-dark"
+                            )}
+                        >
+                            {copiedLink ? <CheckCircle size={18} /> : <Share2 size={18} />}
+                            {copiedLink ? "Copiado!" : "Convidar Membros"}
+                        </Button>
+                    )}
                     <div className="bg-white px-4 py-2 rounded-xl border border-gray-100 shadow-sm flex items-center gap-2">
                         <Layers size={18} className="text-primary" />
-                        <span className="text-sm font-bold">{districts.length} Distritos</span>
+                        <span className="text-sm font-bold">{districts.length} {districts.length === 1 ? 'Distrito' : 'Distritos'}</span>
                     </div>
                 </div>
             </div>
@@ -302,10 +346,9 @@ export default function DashboardPage() {
                 ))}
             </div>
 
-            {/* Detail Modal */}
             {selectedStat && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[80vh] flex flex-col scale-in-center">
+                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[80vh] flex flex-col">
                         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
                             <h3 className="font-bold text-lg">{modalTitle}</h3>
                             <button onClick={closeDetailModal} className="p-2 hover:bg-gray-200 rounded-full">

@@ -361,7 +361,7 @@ export default function BaseQuizPage() {
     };
 
     const submitQuiz = async () => {
-        if (!answeringQuiz || !user) return;
+        if (!answeringQuiz || !user || isSubmitting) return;
         setIsSubmitting(true);
 
         try {
@@ -862,10 +862,9 @@ export default function BaseQuizPage() {
                             </div>
 
                             <div className="p-6 overflow-y-auto flex-1">
-                                <h3 className="text-xl font-bold text-gray-800 mb-6 font-display">
+                                <h3 className="text-2xl md:text-3xl font-black text-gray-800 mb-8 font-display">
                                     {answeringQuiz.questions[currentQuestionIndex].question}
                                 </h3>
-
                                 <div className="space-y-3">
                                     {answeringQuiz.questions[currentQuestionIndex].options.map((opt, idx) => {
                                         const isSelected = currentAnswers[currentQuestionIndex] === idx;
@@ -887,7 +886,7 @@ export default function BaseQuizPage() {
                                                 )}>
                                                     {String.fromCharCode(65 + idx)}
                                                 </div>
-                                                <span className={clsx("font-medium", isSelected ? "text-primary" : "text-gray-700")}>{opt}</span>
+                                                <span className={clsx("font-bold text-xl", isSelected ? "text-primary" : "text-gray-700")}>{opt}</span>
                                             </button>
                                         );
                                     })}

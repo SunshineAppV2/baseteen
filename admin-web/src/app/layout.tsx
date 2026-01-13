@@ -11,6 +11,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Baseteen Admin - Ministério do Adolescente",
   description: "Painel administrativo de gamificação e ranking",
+  metadataBase: new URL('https://baseteen.vercel.app'),
 };
 
 export default function RootLayout({

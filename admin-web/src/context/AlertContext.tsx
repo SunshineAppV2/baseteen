@@ -29,7 +29,7 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     return (
         <AlertContext.Provider value={{ showAlert }}>
             {children}
-            {alertMessage && (
+            {alertMessage && alertMessage.trim().length > 0 && (
                 <CenteredAlert message={alertMessage} onClose={closeAlert} />
             )}
         </AlertContext.Provider>

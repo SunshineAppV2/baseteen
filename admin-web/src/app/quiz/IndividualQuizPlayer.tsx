@@ -24,15 +24,44 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
     const questions = quiz.questions || [];
     const currentQuestion = questions[currentIdx];
 
+    // DEBUG: Log quiz structure on mount
+    if (currentIdx === 0 && !answered) {
+        console.log('[QUIZ DEBUG] Quiz loaded:', {
+            title: quiz.title,
+            totalQuestions: questions.length,
+            firstQuestion: currentQuestion
+        });
+    }
+
     const handleSubmit = (idx: number) => {
         if (answered) return;
 
+        // DEBUG: Log answer submission
+        console.log('[QUIZ DEBUG] Answer submitted:', {
+            questionIndex: currentIdx,
+            selectedIndex: idx,
+            correctAnswer: currentQuestion.correctAnswer,
+            correctAnswerType: typeof currentQuestion.correctAnswer,
+            alternatives: currentQuestion.alternatives,
+            xpValue: currentQuestion.xpValue
+        });
+
         const isCorrect = idx === currentQuestion.correctAnswer;
+        console.log('[QUIZ DEBUG] Is correct?', isCorrect);
+
         setSelectedAlt(idx);
         setAnswered(true);
 
         if (isCorrect) {
-            setScore(prev => prev + (currentQuestion.xpValue || 100));
+            const points = currentQuestion.xpValue || 100;
+            console.log('[QUIZ DEBUG] Adding points:', points);
+            setScore(prev => {
+                const newScore = prev + points;
+                console.log('[QUIZ DEBUG] Score updated:', prev, '->', newScore);
+                return newScore;
+            });
+        } else {
+            console.log('[QUIZ DEBUG] Wrong answer - no points added');
         }
     };
 
@@ -47,16 +76,20 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
     };
 
     const finishQuiz = async () => {
+        if (isSaving || finished) return;
+        console.log('[QUIZ DEBUG] Finishing quiz with final score:', score);
         setFinished(true);
         setIsSaving(true);
 
         if (score > 0) {
             try {
+                console.log('[QUIZ DEBUG] Saving XP to Firestore...');
                 const userRef = doc(db, "users", userId);
                 await updateDoc(userRef, {
                     xp: increment(score),
                     "stats.currentXp": increment(score)
                 });
+                console.log('[QUIZ DEBUG] XP updated successfully');
 
                 await addDoc(collection(db, "users", userId, "xp_history"), {
                     amount: score,
@@ -65,9 +98,13 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                     createdAt: serverTimestamp(),
                     reason: `Participação Individual no Quiz: ${quiz.title}`
                 });
+                console.log('[QUIZ DEBUG] XP history entry created successfully');
             } catch (err) {
-                console.error("Error saving individual quiz result:", err);
+                console.error("[QUIZ DEBUG] Error saving individual quiz result:", err);
+                alert(`Erro ao salvar pontuação: ${err}`);
             }
+        } else {
+            console.warn('[QUIZ DEBUG] Score is 0, skipping XP save');
         }
         setIsSaving(false);
     };
@@ -125,7 +162,7 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                     <span className="inline-block px-3 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full mb-4 uppercase tracking-wider">
                         Quiz Individual
                     </span>
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-8 leading-tight">
+                    <h1 className="text-3xl md:text-5xl font-black text-gray-900 mb-10 leading-tight">
                         {currentQuestion.statement}
                     </h1>
 
@@ -161,7 +198,7 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                                     )}>
                                         {String.fromCharCode(65 + idx)}
                                     </div>
-                                    <span className="font-semibold text-lg">{alt.text || alt}</span>
+                                    <span className="font-bold text-xl md:text-2xl">{alt.text || alt}</span>
                                     {answered && isCorrect && <CheckCircle2 className="ml-auto text-green-500" size={24} />}
                                 </button>
                             );

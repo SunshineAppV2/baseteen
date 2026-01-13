@@ -29,6 +29,74 @@ interface Base {
     districtId: string;
 }
 
+// Helper Component for Base Score
+function BaseStatusCard({ baseId }: { baseId: string }) {
+    const { data: submissions } = useCollection<any>("base_submissions",
+        useMemo(() => [where("baseId", "==", baseId), where("status", "==", "approved")], [baseId])
+    );
+    const { data: tasks } = useCollection<any>("tasks", useMemo(() => [where("isBaseCollective", "==", true)], []));
+
+    const stats = useMemo(() => {
+        if (!submissions || !tasks) return null;
+
+        const earnedPoints = submissions.reduce((acc, sub) => acc + (sub.xpReward || 0), 0);
+        const totalPoints = tasks.reduce((acc, t) => acc + (t.points || 0), 0);
+        const percentage = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
+        const roundedPercentage = Number(percentage.toFixed(1));
+
+        // Star Logic
+        let stars = 0;
+        if (roundedPercentage >= 90) stars = 5;
+        else if (roundedPercentage >= 72.5) stars = 4;
+        else if (roundedPercentage >= 55) stars = 3;
+        else if (roundedPercentage >= 37.5) stars = 2;
+        else if (roundedPercentage >= 20) stars = 1;
+
+        return { earnedPoints, totalPoints, percentage: roundedPercentage, stars };
+    }, [submissions, tasks]);
+
+    if (!stats) return <div className="h-24 bg-gray-50 rounded-xl animate-pulse"></div>;
+
+    return (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-lg mb-8 relative overflow-hidden">
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="text-center md:text-left">
+                    <h2 className="text-lg font-medium text-blue-100 mb-1">Status da Sua Base</h2>
+                    <div className="flex items-center gap-2 justify-center md:justify-start">
+                        <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map(star => (
+                                <svg key={star} className={clsx("w-8 h-8", star <= stats.stars ? "text-yellow-400 fill-yellow-400" : "text-blue-900/40 fill-blue-900/40")} viewBox="0 0 24 24">
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                </svg>
+                            ))}
+                        </div>
+                        <span className="text-2xl font-bold ml-2">
+                            {stats.stars} {stats.stars === 1 ? 'Estrela' : 'Estrelas'}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-8 bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+                    <div className="text-center">
+                        <div className="text-sm text-blue-200 uppercase tracking-wider">Conquistado</div>
+                        <div className="text-3xl font-black">{stats.earnedPoints} <span className="text-sm font-normal text-blue-300">Pontos</span></div>
+                    </div>
+                    <div className="h-10 w-[1px] bg-white/20"></div>
+                    <div className="text-center">
+                        <div className="text-sm text-blue-200 uppercase tracking-wider">Disponível</div>
+                        <div className="text-3xl font-bold text-blue-100">{stats.totalPoints} <span className="text-sm font-normal text-blue-300">Pontos</span></div>
+                    </div>
+                    <div className="hidden md:block">
+                        <div className="w-16 h-16 rounded-full border-4 border-white/20 flex items-center justify-center text-sm font-bold">
+                            {Math.round(stats.percentage)}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 interface UserData {
     id: string;
     displayName: string;
@@ -54,7 +122,14 @@ export default function RankingPage() {
             return [where('baseId', '==', currentUser.baseId)];
         } else if (currentUser?.role === 'coord_distrital' && currentUser.districtId) {
             return [where('districtId', '==', currentUser.districtId)];
+        } else if (currentUser?.role === 'coord_regiao' && currentUser.regionId) {
+            return [where('regionId', '==', currentUser.regionId)];
+        } else if (currentUser?.role === 'coord_associacao' && currentUser.associationId) {
+            return [where('associationId', '==', currentUser.associationId)];
+        } else if (currentUser?.role === 'coord_uniao' && currentUser.unionId) {
+            return [where('unionId', '==', currentUser.unionId)];
         }
+        // Master/Admin/Gerency fetches all (allowed by isOwnerOrAdmin())
         return [];
     }, [currentUser]);
 
@@ -152,10 +227,15 @@ export default function RankingPage() {
                         <Trophy className="text-yellow-500" /> Ranking
                     </h1>
                     <p className="text-gray-500 mt-1">
-                        Acompanhe o desempenho e XP dos adolescentes. Clique em um card para ver detalhes.
+                        Acompanhe o desempenho e Pontos dos adolescentes.
                     </p>
                 </div>
             </div>
+
+            {/* BASE COORDINATOR VIEW: Show Base Status */}
+            {currentUser?.role === 'coord_base' && currentUser.baseId && (
+                <BaseStatusCard baseId={currentUser.baseId} />
+            )}
 
             {/* Filters */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 items-center">
@@ -227,7 +307,7 @@ export default function RankingPage() {
                         </div>
                         <h3 className="font-bold text-gray-800 text-center truncate w-full">{rankedUsers[1].displayName}</h3>
                         <p className="text-xs text-gray-500 mb-2">{getBaseName(rankedUsers[1].baseId)}</p>
-                        <div className="text-2xl font-black text-gray-400">{rankedUsers[1].stats?.currentXp || 0} XP</div>
+                        <div className="text-2xl font-black text-gray-400">{rankedUsers[1].stats?.currentXp || 0} Pontos</div>
                     </div>
 
                     {/* 1st Place */}
@@ -251,7 +331,7 @@ export default function RankingPage() {
                         </div>
                         <h3 className="text-lg font-bold text-gray-800 text-center truncate w-full">{rankedUsers[0].displayName}</h3>
                         <p className="text-sm text-gray-500 mb-2">{getBaseName(rankedUsers[0].baseId)}</p>
-                        <div className="text-3xl font-black text-yellow-500">{rankedUsers[0].stats?.currentXp || 0} XP</div>
+                        <div className="text-3xl font-black text-yellow-500">{rankedUsers[0].stats?.currentXp || 0} Pontos</div>
                     </div>
 
                     {/* 3rd Place */}
@@ -274,7 +354,7 @@ export default function RankingPage() {
                         </div>
                         <h3 className="font-bold text-gray-800 text-center truncate w-full">{rankedUsers[2].displayName}</h3>
                         <p className="text-xs text-gray-500 mb-2">{getBaseName(rankedUsers[2].baseId)}</p>
-                        <div className="text-2xl font-black text-amber-700">{rankedUsers[2].stats?.currentXp || 0} XP</div>
+                        <div className="text-2xl font-black text-amber-700">{rankedUsers[2].stats?.currentXp || 0} Pontos</div>
                     </div>
                 </div>
             )}
@@ -288,7 +368,7 @@ export default function RankingPage() {
                             <th className="p-4 text-xs font-bold text-gray-400 uppercase">Adolescente</th>
                             <th className="p-4 text-xs font-bold text-gray-400 uppercase hidden md:table-cell">Base / Distrito</th>
                             <th className="p-4 text-xs font-bold text-gray-400 uppercase text-center">Nível</th>
-                            <th className="p-4 text-xs font-bold text-gray-400 uppercase text-right">XP Total</th>
+                            <th className="p-4 text-xs font-bold text-gray-400 uppercase text-right">Pontos</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">

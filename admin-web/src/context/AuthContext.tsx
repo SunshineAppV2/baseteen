@@ -9,7 +9,11 @@ interface AuthUser extends User {
     role?: string;
     baseId?: string;
     districtId?: string;
+    regionId?: string;
+    associationId?: string;
+    unionId?: string;
     classification?: string;
+    status?: 'pending' | 'approved' | 'rejected';
 }
 
 interface AuthContextType {
@@ -39,23 +43,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     let userData = userDoc.exists() ? userDoc.data() : null;
 
                     // 2. If not found by UID, try claiming by Email (for pre-created coordinators)
-                    if (!userData && firebaseUser.email) {
-                        const q = query(collection(db, "users"), where("email", "==", firebaseUser.email));
-                        const emailQuery = await getDocs(q);
+                    if (!userData && firebaseUser.email && firebaseUser.email !== "master@baseteen.com") {
+                        try {
+                            const q = query(collection(db, "users"), where("email", "==", firebaseUser.email.toLowerCase()));
+                            const emailQuery = await getDocs(q);
 
-                        if (!emailQuery.empty) {
-                            const foundDoc = emailQuery.docs[0];
-                            const foundData = foundDoc.data();
+                            if (!emailQuery.empty) {
+                                const foundDoc = emailQuery.docs[0];
+                                const foundData = foundDoc.data();
+                                userData = foundData;
 
-                            // Transform the old "email-only" doc into a UID doc or update it
-                            // For simplicity, we'll update the found doc with the UID if it doesn't have it
-                            // or just use its data.
-                            userData = foundData;
-                            await updateDoc(doc(db, "users", foundDoc.id), {
-                                uid: firebaseUser.uid,
-                                displayName: firebaseUser.displayName || foundData.displayName,
-                                updatedAt: new Date()
-                            });
+                                // Auto-link UID if missing or different
+                                try {
+                                    if (foundData.uid !== firebaseUser.uid) {
+                                        await updateDoc(doc(db, "users", foundDoc.id), {
+                                            uid: firebaseUser.uid,
+                                            updatedAt: new Date()
+                                        });
+                                    }
+                                } catch (linkErr) {
+                                    console.warn("UID auto-link failed:", linkErr);
+                                }
+                            }
+                        } catch (queryErr) {
+                            console.warn("Email query failed (likely permission):", queryErr);
                         }
                     }
 
@@ -71,7 +82,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                             role: userData.role,
                             baseId: userData.baseId,
                             districtId: userData.districtId,
+                            regionId: userData.regionId,
+                            associationId: userData.associationId,
+                            unionId: userData.unionId,
                             classification: userData.classification,
+                            status: userData.status || 'approved', // Default to approved for existing users
                         } as AuthUser);
                     } else {
                         setUser(firebaseUser as AuthUser);

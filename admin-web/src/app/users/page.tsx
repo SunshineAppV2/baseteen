@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useCollection, firestoreService } from "@/hooks/useFirestore";
 import { Button } from "@/components/ui/Button";
 import {
@@ -11,6 +11,9 @@ import {
     Mail,
     Shield,
     MapPin,
+    RefreshCw,
+    Share2,
+    CheckCircle,
     SearchX,
     X,
     Save,
@@ -20,8 +23,7 @@ import {
     Send,
     LayoutGrid,
     List,
-    TrendingUp,
-    RefreshCw
+    TrendingUp
 } from "lucide-react";
 import { initializeApp, deleteApp, getApp, getApps } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut as signOutSecondary, sendPasswordResetEmail } from "firebase/auth";
@@ -35,6 +37,9 @@ import MemberLimitModal from "@/components/MemberLimitModal";
 interface District {
     id: string;
     name: string;
+    regionId?: string;
+    associationId?: string;
+    unionId?: string;
 }
 
 interface Base {
@@ -42,6 +47,10 @@ interface Base {
     name: string;
     districtId: string;
 }
+
+interface Union { id: string; name: string; }
+interface Association { id: string; name: string; unionId: string; }
+interface Region { id: string; name: string; associationId?: string; }
 
 export type UserClassification = 'pre-adolescente' | 'adolescente';
 
@@ -52,6 +61,10 @@ export interface User {
     role: string;
     baseId?: string;
     districtId?: string;
+    quarterClassification?: string;
+    regionId?: string;
+    associationId?: string;
+    unionId?: string;
     birthDate?: string;
     classification?: UserClassification;
     participatesInRanking?: boolean;
@@ -85,6 +98,9 @@ export function getTheoreticalClassification(birthDate?: string): UserClassifica
 const roleColors: Record<string, string> = {
     master: "bg-purple-100 text-purple-700",
     coord_geral: "bg-blue-100 text-blue-700",
+    coord_uniao: "bg-indigo-100 text-indigo-700",
+    coord_associacao: "bg-sky-100 text-sky-700",
+    coord_regiao: "bg-teal-100 text-teal-700",
     secretaria: "bg-green-100 text-green-700",
     coord_distrital: "bg-orange-100 text-orange-700",
     coord_base: "bg-cyan-100 text-cyan-700",
@@ -94,6 +110,9 @@ const roleColors: Record<string, string> = {
 const roleNames: Record<string, string> = {
     master: "Master",
     coord_geral: "Coord. Geral",
+    coord_uniao: "Coord. União",
+    coord_associacao: "Coord. Associação",
+    coord_regiao: "Coord. Região",
     secretaria: "Secretária",
     coord_distrital: "Coord. Distrital",
     coord_base: "Coord. Base",
@@ -116,8 +135,18 @@ export default function UsersPage() {
             : [];
 
     const { data: users, loading } = useCollection<User>("users", userConstraints);
-    const { data: districts } = useCollection<District>("districts");
-    const { data: bases } = useCollection<Base>("bases");
+    const { data: districtsRaw } = useCollection<District>("districts");
+    const { data: basesRaw } = useCollection<Base>("bases");
+    const { data: regionsRaw } = useCollection<Region>("regions");
+    const { data: associationsRaw } = useCollection<Association>("associations");
+    const { data: unionsRaw } = useCollection<Union>("unions");
+
+    // Sort all lists alphabetically
+    const districts = useMemo(() => [...districtsRaw].sort((a, b) => a.name.localeCompare(b.name)), [districtsRaw]);
+    const bases = useMemo(() => [...basesRaw].sort((a, b) => a.name.localeCompare(b.name)), [basesRaw]);
+    const regions = useMemo(() => [...regionsRaw].sort((a, b) => a.name.localeCompare(b.name)), [regionsRaw]);
+    const associations = useMemo(() => [...associationsRaw].sort((a, b) => a.name.localeCompare(b.name)), [associationsRaw]);
+    const unions = useMemo(() => [...unionsRaw].sort((a, b) => a.name.localeCompare(b.name)), [unionsRaw]);
 
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState("all");
@@ -133,22 +162,54 @@ export default function UsersPage() {
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [editRole, setEditRole] = useState("");
+    const [editUnion, setEditUnion] = useState("");
+    const [editAssociation, setEditAssociation] = useState("");
+    const [editRegion, setEditRegion] = useState("");
     const [editDistrict, setEditDistrict] = useState("");
     const [editBase, setEditBase] = useState("");
-    const [editDisplayName, setEditDisplayName] = useState(""); // Added Name
+    const [editDisplayName, setEditDisplayName] = useState("");
     const [editBirthDate, setEditBirthDate] = useState("");
+    const [editQuarterClassification, setEditQuarterClassification] = useState("");
     const [editParticipatesInRanking, setEditParticipatesInRanking] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [copiedInvite, setCopiedInvite] = useState(false);
+
+    const handleCopyInvite = () => {
+        if (!currentUser) return;
+
+        const baseUrl = window.location.origin + "/login";
+        const params = new URLSearchParams({
+            unionId: currentUser.unionId || "",
+            associationId: currentUser.associationId || "",
+            regionId: currentUser.regionId || "",
+            districtId: currentUser.districtId || "",
+            baseId: currentUser.baseId || ""
+        });
+
+        const currentBase = bases.find(b => b.id === currentUser.baseId);
+        if (currentBase && (currentBase as any).program) {
+            params.append('program', (currentBase as any).program);
+        }
+
+        const link = `${baseUrl}?${params.toString()}`;
+        navigator.clipboard.writeText(link);
+        setCopiedInvite(true);
+        setTimeout(() => setCopiedInvite(false), 2000);
+    };
 
     // New User State
     const [newUser, setNewUser] = useState({
         displayName: "",
         email: "",
         password: "",
-        role: ['coord_base', 'coord_distrital'].includes(currentUser?.role || '') ? 'membro' : 'membro', // Start with membro anyway
+        role: ['coord_base', 'coord_distrital'].includes(currentUser?.role || '') ? 'membro' : 'membro',
+        unionId: "",
+        associationId: "",
+        regionId: "",
         districtId: "",
         baseId: "",
         birthDate: "",
+        quarterClassification: "",
         participatesInRanking: true
     });
 
@@ -174,11 +235,15 @@ export default function UsersPage() {
     const handleEditClick = (user: User) => {
         setSelectedUser(user);
         setEditRole(user.role);
+        setEditUnion(user.unionId || "");
+        setEditAssociation(user.associationId || "");
+        setEditRegion(user.regionId || "");
         setEditDistrict(user.districtId || "");
         setEditBase(user.baseId || "");
-        setEditDisplayName(user.displayName || ""); // Initialize Name
+        setEditDisplayName(user.displayName || "");
         setEditBirthDate(user.birthDate || "");
-        setEditParticipatesInRanking(user.participatesInRanking !== false); // Default to true if undefined
+        setEditQuarterClassification(user.quarterClassification || "");
+        setEditParticipatesInRanking(user.participatesInRanking !== false);
     };
 
     const handleCreateUser = async () => {
@@ -217,14 +282,47 @@ export default function UsersPage() {
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
             const uid = userCredential.user.uid;
 
+            // Helper to resolve hierarchy
+            let finalUnionId = newUser.unionId || null;
+            let finalAssocId = newUser.associationId || null;
+            let finalRegionId = newUser.regionId || null;
+
+            // If base/district selected, infer parents
+            if (newUser.districtId) {
+                const d = districts.find(d => d.id === newUser.districtId);
+                if (d?.regionId) {
+                    finalRegionId = d.regionId;
+                    const r = regions.find(r => r.id === finalRegionId);
+                    if (r?.associationId) {
+                        finalAssocId = r.associationId;
+                        const a = associations.find(a => a.id === finalAssocId);
+                        if (a?.unionId) finalUnionId = a.unionId;
+                    }
+                }
+            } else if (newUser.regionId) {
+                const r = regions.find(r => r.id === newUser.regionId);
+                if (r?.associationId) {
+                    finalAssocId = r.associationId;
+                    const a = associations.find(a => a.id === finalAssocId);
+                    if (a?.unionId) finalUnionId = a.unionId;
+                }
+            } else if (newUser.associationId) {
+                const a = associations.find(a => a.id === newUser.associationId);
+                if (a?.unionId) finalUnionId = a.unionId;
+            }
+
             // Save to Firestore with specific UID
             await firestoreService.set("users", uid, {
                 displayName: newUser.displayName,
                 email: newUser.email,
                 role: newUser.role,
+                unionId: finalUnionId,
+                associationId: finalAssocId,
+                regionId: finalRegionId,
                 districtId: newUser.districtId || null,
                 baseId: newUser.baseId || null,
                 birthDate: newUser.birthDate || null,
+                quarterClassification: newUser.quarterClassification || null,
                 classification: getTheoreticalClassification(newUser.birthDate),
                 participatesInRanking: newUser.participatesInRanking,
                 stats: { level: 1, currentXp: 0 },
@@ -235,8 +333,7 @@ export default function UsersPage() {
             await signOutSecondary(secondaryAuth);
 
             setIsCreateModalOpen(false);
-            setIsCreateModalOpen(false);
-            setNewUser({ displayName: "", email: "", role: "membro", districtId: "", baseId: "", password: "", birthDate: "", participatesInRanking: true });
+            setNewUser({ displayName: "", email: "", role: "membro", unionId: "", associationId: "", regionId: "", districtId: "", baseId: "", password: "", birthDate: "", quarterClassification: "", participatesInRanking: true });
             alert("Usuário criado com sucesso! O login já está ativo.");
         } catch (error: any) {
             console.error("Error creating user:", error);
@@ -269,6 +366,9 @@ export default function UsersPage() {
                     ...prev,
                     displayName: userData.displayName || prev.displayName,
                     role: userData.role || prev.role,
+                    unionId: userData.unionId || prev.unionId,
+                    associationId: userData.associationId || prev.associationId,
+                    regionId: userData.regionId || prev.regionId,
                     districtId: userData.districtId || prev.districtId,
                     baseId: userData.baseId || prev.baseId,
                     birthDate: userData.birthDate || prev.birthDate,
@@ -302,12 +402,45 @@ export default function UsersPage() {
         if (!selectedUser) return;
         setIsSaving(true);
         try {
+            // Helper to resolve hierarchy for edit
+            let finalUnionId = editUnion || null;
+            let finalAssocId = editAssociation || null;
+            let finalRegionId = editRegion || null;
+
+            // If base/district selected, infer parents (Priority: Base > District > Region > Assoc > Union)
+            if (editDistrict) {
+                const d = districts.find(d => d.id === editDistrict);
+                if (d?.regionId) {
+                    finalRegionId = d.regionId;
+                    const r = regions.find(r => r.id === finalRegionId);
+                    if (r?.associationId) {
+                        finalAssocId = r.associationId;
+                        const a = associations.find(a => a.id === finalAssocId);
+                        if (a?.unionId) finalUnionId = a.unionId;
+                    }
+                }
+            } else if (editRegion) {
+                const r = regions.find(r => r.id === editRegion);
+                if (r?.associationId) {
+                    finalAssocId = r.associationId;
+                    const a = associations.find(a => a.id === finalAssocId);
+                    if (a?.unionId) finalUnionId = a.unionId;
+                }
+            } else if (editAssociation) {
+                const a = associations.find(a => a.id === editAssociation);
+                if (a?.unionId) finalUnionId = a.unionId;
+            }
+
             await firestoreService.update("users", selectedUser.id, {
                 displayName: editDisplayName,
                 role: editRole,
+                unionId: finalUnionId,
+                associationId: finalAssocId,
+                regionId: finalRegionId,
                 districtId: editDistrict || null,
                 baseId: editBase || null,
                 birthDate: editBirthDate || null,
+                quarterClassification: editQuarterClassification || null,
                 // Use the correct classification function
                 classification: getTheoreticalClassification(editBirthDate),
                 participatesInRanking: editParticipatesInRanking
@@ -430,6 +563,19 @@ export default function UsersPage() {
                                 Promover p/ Adolescentes
                             </Button>
                         </>
+                    )}
+                    {((currentUser?.role === 'coord_base' && currentUser.baseId) || currentUser?.role === 'master') && (
+                        <Button
+                            onClick={handleCopyInvite}
+                            variant="outline"
+                            className={clsx(
+                                "flex items-center gap-2 border-primary transition-all",
+                                copiedInvite ? "bg-green-50 text-green-600 border-green-600" : "text-primary hover:bg-primary/5"
+                            )}
+                        >
+                            {copiedInvite ? <CheckCircle size={20} /> : <Share2 size={20} />}
+                            {copiedInvite ? "Copiado!" : "Convidar p/ Link"}
+                        </Button>
                     )}
                     <Button onClick={() => setIsCreateModalOpen(true)} className="flex items-center gap-2">
                         <UserPlus size={20} />
@@ -803,34 +949,95 @@ export default function UsersPage() {
                                     </select>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
+                                {newUser.role === 'coord_uniao' && (
                                     <div className="space-y-2">
-                                        <label className="text-sm font-bold text-text-secondary">Distrito</label>
+                                        <label className="text-sm font-bold text-text-secondary">União</label>
                                         <select
-                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            value={newUser.districtId}
-                                            onChange={(e) => setNewUser({ ...newUser, districtId: e.target.value, baseId: "" })}
-                                            disabled={['coord_base', 'coord_distrital'].includes(currentUser?.role || '')}
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={newUser.unionId}
+                                            onChange={(e) => setNewUser({ ...newUser, unionId: e.target.value })}
                                         >
-                                            <option value="">Nenhum</option>
-                                            {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            <option value="">Selecione a União</option>
+                                            {unions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                         </select>
                                     </div>
+                                )}
+
+                                {newUser.role === 'coord_associacao' && (
                                     <div className="space-y-2">
-                                        <label className="text-sm font-bold text-text-secondary">Base</label>
+                                        <label className="text-sm font-bold text-text-secondary">Associação</label>
                                         <select
-                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            value={newUser.baseId}
-                                            onChange={(e) => setNewUser({ ...newUser, baseId: e.target.value })}
-                                            disabled={!newUser.districtId || currentUser?.role === 'coord_base'}
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={newUser.associationId}
+                                            onChange={(e) => setNewUser({ ...newUser, associationId: e.target.value })}
                                         >
-                                            <option value="">Nenhuma</option>
-                                            {bases.filter(b => b.districtId === newUser.districtId).map(b => (
-                                                <option key={b.id} value={b.id}>{b.name}</option>
-                                            ))}
+                                            <option value="">Selecione a Associação</option>
+                                            {associations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                                         </select>
                                     </div>
-                                </div>
+                                )}
+
+                                {newUser.role === 'coord_regiao' && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Região</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={newUser.regionId}
+                                            onChange={(e) => setNewUser({ ...newUser, regionId: e.target.value })}
+                                        >
+                                            <option value="">Selecione a Região</option>
+                                            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {['coord_uniao', 'coord_associacao', 'coord_regiao', 'coord_distrital'].includes(newUser.role) && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Classificação de Trimestres</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={newUser.quarterClassification}
+                                            onChange={(e) => setNewUser({ ...newUser, quarterClassification: e.target.value })}
+                                        >
+                                            <option value="">Selecione o Trimestre</option>
+                                            <option value="1º Trimestre">1º Trimestre</option>
+                                            <option value="2º Trimestre">2º Trimestre</option>
+                                            <option value="3º Trimestre">3º Trimestre</option>
+                                            <option value="4º Trimestre">4º Trimestre</option>
+                                        </select>
+                                    </div>
+                                )}
+
+                                {(newUser.role === 'coord_distrital' || newUser.role === 'coord_base' || newUser.role === 'membro') && (
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-text-secondary">Distrito</label>
+                                            <select
+                                                className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                value={newUser.districtId}
+                                                onChange={(e) => setNewUser({ ...newUser, districtId: e.target.value, baseId: "" })}
+                                                disabled={!!currentUser?.districtId} // If user is district coord, locked
+                                            >
+                                                <option value="">Nenhum</option>
+                                                {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-text-secondary">Base</label>
+                                            <select
+                                                className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                value={newUser.baseId}
+                                                onChange={(e) => setNewUser({ ...newUser, baseId: e.target.value })}
+                                                disabled={!newUser.districtId || currentUser?.role === 'coord_base'}
+                                            >
+                                                <option value="">Nenhuma</option>
+                                                {bases.filter(b => b.districtId === newUser.districtId).map(b => (
+                                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
@@ -918,37 +1125,99 @@ export default function UsersPage() {
                                     </select>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold text-text-secondary">Distrito</label>
-                                    <select
-                                        className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        value={editDistrict}
-                                        onChange={(e) => {
-                                            setEditDistrict(e.target.value);
-                                            setEditBase(""); // Reset base when district changes
-                                        }}
-                                        disabled={!['master', 'admin', 'secretaria', 'coord_geral'].includes(currentUser?.role || '')}
-                                    >
-                                        <option value="">Nenhum Distrito</option>
-                                        {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                    </select>
-                                </div>
+                                {editRole === 'coord_uniao' && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">União</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={editUnion}
+                                            onChange={(e) => setEditUnion(e.target.value)}
+                                        >
+                                            <option value="">Selecione a União</option>
+                                            {unions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold text-text-secondary">Base</label>
-                                    <select
-                                        className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        value={editBase}
-                                        onChange={(e) => setEditBase(e.target.value)}
-                                        disabled={!editDistrict || !['master', 'admin', 'secretaria', 'coord_geral'].includes(currentUser?.role || '')}
-                                    >
-                                        <option value="">Nenhuma Base</option>
-                                        {bases
-                                            .filter(b => b.districtId === editDistrict)
-                                            .map(b => <option key={b.id} value={b.id}>{b.name}</option>)
-                                        }
-                                    </select>
-                                </div>
+                                {editRole === 'coord_associacao' && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Associação</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={editAssociation}
+                                            onChange={(e) => setEditAssociation(e.target.value)}
+                                        >
+                                            <option value="">Selecione a Associação</option>
+                                            {associations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {editRole === 'coord_regiao' && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Região</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={editRegion}
+                                            onChange={(e) => setEditRegion(e.target.value)}
+                                        >
+                                            <option value="">Selecione a Região</option>
+                                            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {['coord_uniao', 'coord_associacao', 'coord_regiao', 'coord_distrital'].includes(editRole) && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-text-secondary">Classificação de Trimestres</label>
+                                        <select
+                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
+                                            value={editQuarterClassification}
+                                            onChange={(e) => setEditQuarterClassification(e.target.value)}
+                                        >
+                                            <option value="">Selecione o Trimestre</option>
+                                            <option value="1º Trimestre">1º Trimestre</option>
+                                            <option value="2º Trimestre">2º Trimestre</option>
+                                            <option value="3º Trimestre">3º Trimestre</option>
+                                            <option value="4º Trimestre">4º Trimestre</option>
+                                        </select>
+                                    </div>
+                                )}
+
+                                {(editRole === 'coord_distrital' || editRole === 'coord_base' || editRole === 'membro') && (
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-text-secondary">Distrito</label>
+                                            <select
+                                                className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                value={editDistrict}
+                                                onChange={(e) => {
+                                                    setEditDistrict(e.target.value);
+                                                    setEditBase(""); // Reset base when district changes
+                                                }}
+                                                disabled={!['master', 'admin', 'secretaria', 'coord_geral'].includes(currentUser?.role || '')}
+                                            >
+                                                <option value="">Nenhum Distrito</option>
+                                                {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-text-secondary">Base</label>
+                                            <select
+                                                className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                value={editBase}
+                                                onChange={(e) => setEditBase(e.target.value)}
+                                                disabled={!editDistrict || !['master', 'admin', 'secretaria', 'coord_geral'].includes(currentUser?.role || '')}
+                                            >
+                                                <option value="">Nenhuma Base</option>
+                                                {bases
+                                                    .filter(b => b.districtId === editDistrict)
+                                                    .map(b => <option key={b.id} value={b.id}>{b.name}</option>)
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">

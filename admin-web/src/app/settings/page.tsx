@@ -21,6 +21,9 @@ interface XpConfig {
     quizCorrectAnswer: number;
     streakBonus: number;
     dailyLogin: number;
+    achievementsEnabled: boolean;
+    achievementsVisibleToBases: boolean;
+    rotaGAEnabled: boolean; // NOVO: Toggle ROTA GA
 }
 
 interface ReadingMeta {
@@ -35,7 +38,10 @@ export default function SettingsPage() {
         profileCompletion: 100,
         quizCorrectAnswer: 10,
         streakBonus: 5,
-        dailyLogin: 20
+        dailyLogin: 20,
+        achievementsEnabled: true,
+        achievementsVisibleToBases: true,
+        rotaGAEnabled: true // NOVO: Padrão ativado
     });
 
     const [readingMetas, setReadingMetas] = useState<ReadingMeta[]>([]);
@@ -47,7 +53,11 @@ export default function SettingsPage() {
             try {
                 const configDoc = await getDoc(doc(db, "settings", "gamification"));
                 if (configDoc.exists()) {
-                    setXpConfig(configDoc.data() as XpConfig);
+                    const data = configDoc.data() as XpConfig;
+                    setXpConfig({
+                        ...data,
+                        achievementsEnabled: data.achievementsEnabled ?? true // Ensure boolean
+                    });
                 }
 
                 // Load reading metas from a separate collection
@@ -156,6 +166,64 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
+                    {/* NOVO: Toggle de Conquistas */}
+                    <div className="pt-4 border-t border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium text-text-secondary">Sistema de Conquistas</label>
+                                <p className="text-xs text-gray-500 mt-1">Ativar/desativar badges e conquistas</p>
+                            </div>
+                            <button
+                                onClick={() => setXpConfig({ ...xpConfig, achievementsEnabled: !xpConfig.achievementsEnabled })}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${xpConfig.achievementsEnabled ? 'bg-primary' : 'bg-gray-300'
+                                    }`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${xpConfig.achievementsEnabled ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+
+                        {/* NOVO: Toggle de Visibilidade para Bases */}
+                        <div className="flex items-center justify-between mt-4">
+                            <div>
+                                <label className="text-sm font-medium text-text-secondary">Mostrar Conquistas para Bases</label>
+                                <p className="text-xs text-gray-500 mt-1">Exibir menu de conquistas para membros e coordenadores</p>
+                            </div>
+                            <button
+                                onClick={() => setXpConfig({ ...xpConfig, achievementsVisibleToBases: !xpConfig.achievementsVisibleToBases })}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${xpConfig.achievementsVisibleToBases ? 'bg-primary' : 'bg-gray-300'
+                                    }`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${xpConfig.achievementsVisibleToBases ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* NOVO: Toggle ROTA GA */}
+                    <div className="pt-4 border-t border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium text-text-secondary">ROTA GA</label>
+                                <p className="text-xs text-gray-500 mt-1">Ativar/desativar menu ROTA GA para bases</p>
+                            </div>
+                            <button
+                                onClick={() => setXpConfig({ ...xpConfig, rotaGAEnabled: !xpConfig.rotaGAEnabled })}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${xpConfig.rotaGAEnabled ? 'bg-primary' : 'bg-gray-300'
+                                    }`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${xpConfig.rotaGAEnabled ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+                    </div>
+
                     <Button onClick={handleSaveGamification} disabled={isSaving} className="w-full gap-2">
                         <Save size={18} />
                         Salvar Pontuação
@@ -254,7 +322,10 @@ function DangerZone() {
         xp: true,
         history: true,
         attendance: true,
-        submissions: true
+        submissions: true,
+        baseSubmissions: true,
+        achievements: true,
+        quizAttempts: true
     });
 
     // Enforce base selection if coord_base
@@ -292,7 +363,8 @@ function DangerZone() {
         if (resetOptions.xp) itemsToReset.push('Pontuação (XP) dos membros');
         if (resetOptions.history) itemsToReset.push('Histórico de Pontos');
         if (resetOptions.attendance) itemsToReset.push('Chamadas (Attendance)');
-        if (resetOptions.submissions) itemsToReset.push('Submissões');
+        if (resetOptions.submissions) itemsToReset.push('Submissões (Individuais)');
+        if (resetOptions.baseSubmissions) itemsToReset.push('Pontos das Bases (COL - Rota GA)');
 
         if (itemsToReset.length === 0) {
             alert('Selecione pelo menos uma opção para resetar.');
@@ -368,7 +440,7 @@ function DangerZone() {
                 await safeBatchDelete(attSnap.docs, db, writeBatch, doc);
             }
 
-            // 3. APAGAR SUBMISSÕES
+            // 3. APAGAR SUBMISSÕES INDIVIDUAIS
             if (resetOptions.submissions) {
                 let subsQuery;
                 if (selectedBaseId === 'all') {
@@ -377,8 +449,73 @@ function DangerZone() {
                     subsQuery = query(collection(db, "submissions"), where("userBaseId", "==", selectedBaseId));
                 }
                 const subsSnap = await getDocs(subsQuery);
-                console.log(`Apagando ${subsSnap.size} submissões...`);
+                console.log(`Apagando ${subsSnap.size} submissões individuais...`);
                 await safeBatchDelete(subsSnap.docs, db, writeBatch, doc);
+            }
+
+            // 4. APAGAR SUBMISSÕES DE BASE (ROTA GA)
+            if (resetOptions.baseSubmissions) {
+                let baseSubsQuery;
+                if (selectedBaseId === 'all') {
+                    baseSubsQuery = collection(db, "base_submissions");
+                } else {
+                    baseSubsQuery = query(collection(db, "base_submissions"), where("baseId", "==", selectedBaseId));
+                }
+                const baseSubsSnap = await getDocs(baseSubsQuery);
+                console.log(`Apagando ${baseSubsSnap.size} submissões de base...`);
+                await safeBatchDelete(baseSubsSnap.docs, db, writeBatch, doc);
+
+                // Reset 'earnedPoints' and 'completedTasks' in Bases
+                console.log("Resetando pontuação das bases...");
+                let basesQuery;
+                if (selectedBaseId === 'all') {
+                    basesQuery = collection(db, "bases");
+                } else {
+                    basesQuery = query(collection(db, "bases"), where("id", "==", selectedBaseId));
+                }
+                const basesSnap = await getDocs(basesQuery);
+                const baseDocs = basesSnap.docs;
+                const chunkBase = 400;
+
+                for (let i = 0; i < baseDocs.length; i += chunkBase) {
+                    const batch = writeBatch(db);
+                    const chunk = baseDocs.slice(i, i + chunkBase);
+
+                    for (const baseDoc of chunk) {
+                        batch.update(doc(db, "bases", baseDoc.id), {
+                            earnedPoints: 0,
+                            totalXp: 0,
+                            completedTasks: 0
+                        });
+                    }
+                    await batch.commit();
+                }
+            }
+
+            // 5. APAGAR CONQUISTAS (Achievements)
+            if (resetOptions.achievements) {
+                let achQuery;
+                if (selectedBaseId === 'all') {
+                    achQuery = collection(db, "achievements");
+                } else {
+                    achQuery = query(collection(db, "achievements"), where("baseId", "==", selectedBaseId));
+                }
+                const achSnap = await getDocs(achQuery);
+                console.log(`Apagando ${achSnap.size} conquistas...`);
+                await safeBatchDelete(achSnap.docs, db, writeBatch, doc);
+            }
+
+            // 6. APAGAR TENTATIVAS DE QUIZ (Quiz Attempts)
+            if (resetOptions.quizAttempts) {
+                let quizQuery;
+                if (selectedBaseId === 'all') {
+                    quizQuery = collection(db, "base_quiz_attempts");
+                } else {
+                    quizQuery = query(collection(db, "base_quiz_attempts"), where("baseId", "==", selectedBaseId));
+                }
+                const quizSnap = await getDocs(quizQuery);
+                console.log(`Apagando ${quizSnap.size} tentativas de quiz...`);
+                await safeBatchDelete(quizSnap.docs, db, writeBatch, doc);
             }
 
             alert(`✅ SUCESSO!\n\nO sistema foi zerado completamente para: ${targetName}`);
@@ -451,7 +588,34 @@ function DangerZone() {
                         onChange={(e) => setResetOptions({ ...resetOptions, submissions: e.target.checked })}
                         className="rounded"
                     />
-                    Submissões
+                    Submissões (Individuais)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-red-800">
+                    <input
+                        type="checkbox"
+                        checked={resetOptions.baseSubmissions}
+                        onChange={(e) => setResetOptions({ ...resetOptions, baseSubmissions: e.target.checked })}
+                        className="rounded shadow-sm"
+                    />
+                    Pontos das Bases (Rota GA / Coletivos) e Requisitos de Base
+                </label>
+                <label className="flex items-center gap-2 text-sm text-red-800">
+                    <input
+                        type="checkbox"
+                        checked={resetOptions.achievements}
+                        onChange={(e) => setResetOptions({ ...resetOptions, achievements: e.target.checked })}
+                        className="rounded shadow-sm"
+                    />
+                    Conquistas (Badges) das Bases
+                </label>
+                <label className="flex items-center gap-2 text-sm text-red-800">
+                    <input
+                        type="checkbox"
+                        checked={resetOptions.quizAttempts}
+                        onChange={(e) => setResetOptions({ ...resetOptions, quizAttempts: e.target.checked })}
+                        className="rounded shadow-sm"
+                    />
+                    Tentativas de Quiz das Bases
                 </label>
             </div>
 

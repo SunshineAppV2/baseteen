@@ -31,21 +31,28 @@ import {
     Gamepad2,
     MonitorPlay,
     QrCode,
-    ChevronRight
+    ChevronRight,
+    FileText,
+    AlertCircle
 } from "lucide-react";
 import IndividualQuizPlayer from "./IndividualQuizPlayer";
 import * as XLSX from 'xlsx';
 import { clsx } from "clsx";
 import QRCode from "react-qr-code";
+import { Copy, Share2 } from "lucide-react";
 import {
-    increment,
     doc,
     getDoc,
     updateDoc,
     addDoc,
+    deleteDoc,
+    getDocs,
     collection,
+    query,
+    where,
     serverTimestamp,
-    Timestamp
+    Timestamp,
+    increment
 } from "firebase/firestore";
 import { ref, set, onValue, off, update, get } from "firebase/database";
 import { rtdb, db } from "@/services/firebase";
@@ -109,9 +116,89 @@ export default function QuizManagementPage() {
 
     // UI Control
     const [isFullScreen, setIsFullScreen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [playingIndividualQuiz, setPlayingIndividualQuiz] = useState<MasterQuiz | null>(null);
 
-    // Helpers
+    const handleRepairDuplicates = async () => {
+        if (!confirm("Deseja remover a duplicidade de pontos para Sophia, Antony e Talita (Quiz Lição 2)?")) return;
+
+        const usersToFix = ['Sophia Damasceno', 'Antony Pantoja', 'Talita Dias'];
+        const quizTitlePart = 'LIÇÃO 2 - TEEN - 1º TRIM';
+
+        setIsSaving(true);
+        try {
+            let totalFixed = 0;
+            for (const name of usersToFix) {
+                // 1. Buscar o usuário por Nome ou DisplayName (fallback)
+                let usersSnap = await getDocs(query(collection(db, "users"), where("name", "==", name)));
+                if (usersSnap.empty) {
+                    usersSnap = await getDocs(query(collection(db, "users"), where("displayName", "==", name)));
+                }
+
+                if (usersSnap.empty) {
+                    console.log(`Usuário não encontrado: ${name}`);
+                    continue;
+                }
+
+                for (const userDoc of usersSnap.docs) {
+                    const userId = userDoc.id;
+                    const userData = userDoc.data();
+
+                    // 2. Buscar o histórico desse usuário
+                    const historyRef = collection(db, "users", userId, "xp_history");
+                    const historySnap = await getDocs(historyRef);
+
+                    let matches: any[] = [];
+                    historySnap.forEach(docSnap => {
+                        const data = docSnap.data();
+                        const reason = data.reason || '';
+                        const taskTitle = data.taskTitle || '';
+                        if (reason.includes(quizTitlePart) || taskTitle.includes(quizTitlePart)) {
+                            matches.push({ id: docSnap.id, ...data });
+                        }
+                    });
+
+                    console.log(`Matches para ${name}:`, matches.length);
+
+                    if (matches.length > 1) {
+                        // Ordenar por data (se houver) para manter o mais antigo
+                        matches.sort((a, b) => {
+                            const dateA = a.createdAt?.seconds || 0;
+                            const dateB = b.createdAt?.seconds || 0;
+                            return dateA - dateB;
+                        });
+
+                        // Manter o primeiro, deletar o resto
+                        const toKeep = matches[0];
+                        const toDelete = matches.slice(1);
+                        console.log(`Mantendo ${toKeep.id}, deletando ${toDelete.length} duplicados`);
+
+                        let pointsToSubtract = 0;
+                        for (const entry of toDelete) {
+                            await deleteDoc(doc(db, "users", userId, "xp_history", entry.id));
+                            pointsToSubtract += entry.amount;
+                        }
+
+                        // Atualizar o total de XP do usuário
+                        const userRef = doc(db, "users", userId);
+                        await updateDoc(userRef, {
+                            xp: increment(-pointsToSubtract),
+                            "stats.currentXp": increment(-pointsToSubtract)
+                        });
+                        totalFixed++;
+                    }
+                }
+            }
+            alert(`${totalFixed} usuários corrigidos com sucesso!`);
+        } catch (err: any) {
+            console.error("Erro na reparação:", err);
+            alert("Erro ao corrigir: " + err.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // --- Helpers ---
     const calculateLiveLeaderboard = async () => {
         if (!gamePin) return [];
         const answersRef = ref(rtdb, `active_quizzes/${gamePin}/answers`);
@@ -153,6 +240,27 @@ export default function QuizManagementPage() {
         classification: "todos" as 'pre-adolescente' | 'adolescente' | 'todos',
         questions: [] as QuizQuestion[]
     });
+    const [isTextImportOpen, setIsTextImportOpen] = useState(false);
+    const [textImportValue, setTextImportValue] = useState("");
+
+    // --- Copy/Distribute Logic ---
+    const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+    const [quizToCopy, setQuizToCopy] = useState<MasterQuiz | null>(null);
+    const [targetBaseId, setTargetBaseId] = useState("");
+    const { data: allBases } = useCollection<any>("bases");
+    const [isSimplifiedMode, setIsSimplifiedMode] = useState(false);
+
+    // Auto-enable simplified mode for Master and Missionários de Cristo
+    useEffect(() => {
+        if (user?.role === 'master') {
+            setIsSimplifiedMode(true);
+        } else if (user?.baseId && allBases) {
+            const userBase = allBases.find(b => b.id === user.baseId);
+            if (userBase?.name?.toLowerCase().includes("missionários de cristo")) {
+                setIsSimplifiedMode(true);
+            }
+        }
+    }, [user, allBases]);
 
     // --- Editor Logic ---
     const resetForm = () => {
@@ -217,11 +325,37 @@ export default function QuizManagementPage() {
             return alert("Preencha todos os campos das questões!");
         }
 
+        // Validate that each question has a correct answer marked
+        for (let i = 0; i < formData.questions.length; i++) {
+            const q = formData.questions[i];
+            const hasCorrect = q.alternatives.some(a => a.isCorrect);
+            if (!hasCorrect) {
+                return alert(`Questão ${i + 1}: Marque uma alternativa como correta!`);
+            }
+        }
+
         try {
+            // Normalize questions to ensure correctAnswer field is always present
+            const normalizedQuestions = formData.questions.map(q => {
+                const correctIdx = q.alternatives.findIndex(a => a.isCorrect);
+
+                return {
+                    id: q.id || crypto.randomUUID(),
+                    statement: q.statement,
+                    alternatives: q.alternatives.map(a => ({
+                        text: a.text,
+                        isCorrect: a.isCorrect
+                    })),
+                    correctAnswer: correctIdx >= 0 ? correctIdx : 0, // CRITICAL: Always include correctAnswer
+                    timeLimit: q.timeLimit || 30,
+                    xpValue: q.xpValue || 100
+                };
+            });
+
             const payload: any = {
                 title: formData.title,
                 description: formData.description,
-                questions: formData.questions,
+                questions: normalizedQuestions, // Use normalized questions
                 availableToStudents: formData.availableToStudents,
                 classification: formData.classification,
                 updatedAt: new Date()
@@ -248,6 +382,65 @@ export default function QuizManagementPage() {
         } catch (error) {
             console.error(error);
             alert("Erro ao salvar.");
+        }
+    };
+
+    // FIX QUIZZES FUNCTION - Corrige quizzes com correctAnswer undefined
+    const handleFixQuizzes = async () => {
+        if (!confirm('Deseja corrigir todos os quizzes com dados inconsistentes?')) return;
+
+        try {
+            console.log('🔧 Iniciando correção de quizzes...');
+            const { collection: fsCollection, getDocs, doc: fsDoc, updateDoc: fsUpdateDoc } = await import('firebase/firestore');
+
+            const quizzesRef = fsCollection(db, 'master_quizzes');
+            const snapshot = await getDocs(quizzesRef);
+
+            let fixedCount = 0;
+
+            for (const docSnap of snapshot.docs) {
+                const quiz = docSnap.data();
+
+                if (!quiz.questions || quiz.questions.length === 0) continue;
+
+                let needsUpdate = false;
+                const fixedQuestions = quiz.questions.map((q: any) => {
+                    if (q.correctAnswer === undefined || q.correctAnswer === null) {
+                        let correctIdx = -1;
+                        if (q.alternatives && Array.isArray(q.alternatives)) {
+                            const firstAlt = q.alternatives[0];
+                            if (typeof firstAlt === 'object' && 'isCorrect' in firstAlt) {
+                                correctIdx = q.alternatives.findIndex((alt: any) => alt.isCorrect === true);
+                            } else {
+                                correctIdx = 0;
+                            }
+                        }
+
+                        needsUpdate = true;
+                        return {
+                            ...q,
+                            correctAnswer: correctIdx >= 0 ? correctIdx : 0,
+                            id: q.id || crypto.randomUUID(),
+                            xpValue: q.xpValue || 100,
+                            timeLimit: q.timeLimit || 30
+                        };
+                    }
+                    return q;
+                });
+
+                if (needsUpdate) {
+                    await fsUpdateDoc(fsDoc(db, 'master_quizzes', docSnap.id), {
+                        questions: fixedQuestions,
+                        updatedAt: new Date()
+                    });
+                    fixedCount++;
+                }
+            }
+
+            alert(`✅ Correção concluída!\n\n${fixedCount} quizzes corrigidos.\n\nRecarregue a página e teste novamente.`);
+        } catch (error) {
+            console.error('Erro ao corrigir quizzes:', error);
+            alert('Erro ao corrigir quizzes. Verifique o console.');
         }
     };
 
@@ -387,6 +580,90 @@ export default function QuizManagementPage() {
         reader.readAsBinaryString(file);
     };
 
+    const handleTextImport = () => {
+        if (!textImportValue.trim()) return alert("Cole o texto das perguntas!");
+
+        const lines = textImportValue.split('\n').filter(l => l.trim());
+        const newQuestions: QuizQuestion[] = [];
+        let errorCount = 0;
+
+        lines.forEach(line => {
+            const parts = line.split(';').map(p => p.trim());
+
+            // Expected: Pergunta; A; B; C; D; Resposta; [Tempo]; [XP]
+            if (parts.length < 6) {
+                errorCount++;
+                return;
+            }
+
+            const [statement, a, b, c, d, correctLetter] = parts;
+            const timeLimit = parseInt(parts[6]) || 30;
+            const xpValue = parseInt(parts[7]) || 100;
+
+            const correctIdx = ['A', 'B', 'C', 'D'].indexOf(correctLetter.toUpperCase());
+            if (correctIdx === -1) {
+                errorCount++;
+                return;
+            }
+
+            newQuestions.push({
+                id: crypto.randomUUID(),
+                statement,
+                alternatives: [
+                    { text: a, isCorrect: correctIdx === 0 },
+                    { text: b, isCorrect: correctIdx === 1 },
+                    { text: c, isCorrect: correctIdx === 2 },
+                    { text: d, isCorrect: correctIdx === 3 }
+                ],
+                timeLimit,
+                xpValue
+            });
+        });
+
+        if (newQuestions.length > 0) {
+            setFormData(prev => ({
+                ...prev,
+                questions: [...prev.questions, ...newQuestions]
+            }));
+            alert(`${newQuestions.length} questões importadas! ${errorCount > 0 ? `(${errorCount} linhas ignoradas por erro)` : ""}`);
+            setIsTextImportOpen(false);
+            setTextImportValue("");
+        } else {
+            alert("Nenhuma questão válida encontrada. Verifique o formato!");
+        }
+    };
+
+    const handleCopyQuiz = async () => {
+        if (!quizToCopy || !targetBaseId) return alert("Selecione uma base!");
+
+        try {
+            const selectedBase = allBases.find(b => b.id === targetBaseId);
+            const baseName = selectedBase?.name || "Base Selecionada";
+
+            const newQuiz = {
+                title: `${quizToCopy.title} (Cópia - ${baseName})`,
+                description: quizToCopy.description,
+                questions: quizToCopy.questions,
+                classification: quizToCopy.classification,
+                baseId: targetBaseId, // Assign to target base
+                isCopy: true,
+                originalQuizId: quizToCopy.id,
+                availableToStudents: true, // Usually copies are meant for students
+                createdBy: user?.uid,
+                createdAt: serverTimestamp()
+            };
+
+            await addDoc(collection(db, "master_quizzes"), newQuiz);
+            alert(`Quiz copiado com sucesso para ${baseName}!`);
+            setIsCopyModalOpen(false);
+            setQuizToCopy(null);
+            setTargetBaseId("");
+        } catch (error) {
+            console.error("Error copying quiz:", error);
+            alert("Erro ao copiar quiz.");
+        }
+    };
+
     // --- Arena Logic ---
     const handleSelectForArena = (quiz: MasterQuiz) => {
         setSelectedQuiz(quiz);
@@ -413,15 +690,19 @@ export default function QuizManagementPage() {
         const qId = selectedQuiz.questions[currentIdx]?.id;
         if (!qId) return;
 
-        const answersRef = ref(rtdb, `active_quizzes/main_event/answers/${qId}`);
+        const path = gamePin ? `active_quizzes/${gamePin}` : 'active_quizzes/main_event';
+        const answersRef = ref(rtdb, `${path}/answers/${qId}`);
         const unsub = onValue(answersRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 const newStats: Record<number, number> = {};
                 let count = 0;
                 Object.values(data).forEach((ans: any) => {
-                    const opt = ans.selectedOption;
-                    newStats[opt] = (newStats[opt] || 0) + 1;
+                    // Use answerIdx (matching participant app) or selectedOption (legacy)
+                    const opt = ans.answerIdx !== undefined ? ans.answerIdx : ans.selectedOption;
+                    if (opt !== undefined) {
+                        newStats[opt] = (newStats[opt] || 0) + 1;
+                    }
                     count++;
                 });
                 setStats(newStats);
@@ -433,7 +714,25 @@ export default function QuizManagementPage() {
         });
 
         return () => off(answersRef);
-    }, [currentIdx, selectedQuiz]);
+    }, [currentIdx, selectedQuiz, gamePin]);
+
+    // Resiliência: Recuperar PIN ativo ao carregar/recarregar
+    useEffect(() => {
+        const recoverPin = async () => {
+            try {
+                const mainSnap = await get(ref(rtdb, 'active_quizzes/main_event'));
+                if (mainSnap.exists()) {
+                    const data = mainSnap.val();
+                    if (data.status === 'in_progress' || data.status === 'waiting') {
+                        if (data.pin) setGamePin(data.pin);
+                    }
+                }
+            } catch (e) {
+                console.error("Erro ao recuperar PIN:", e);
+            }
+        };
+        recoverPin();
+    }, []);
 
     const startLiveQuiz = async () => {
         if (!selectedQuiz) return;
@@ -441,6 +740,11 @@ export default function QuizManagementPage() {
         try {
             const newPin = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit PIN
             setGamePin(newPin);
+
+            // Check if we should force simplified mode for these specific roles/bases
+            const teacherBase = user?.baseId ? allBases.find(b => b.id === user.baseId) : null;
+            const isMissionarios = teacherBase?.name?.toLowerCase().includes("missionários de cristo") || teacherBase?.name?.toLowerCase().includes("missionarios de cristo");
+            const shouldBeSimplified = isSimplifiedMode || user?.role === 'master' || isMissionarios;
 
             // Save to specific PIN node
             await set(ref(rtdb, `active_quizzes/${newPin}`), {
@@ -450,7 +754,8 @@ export default function QuizManagementPage() {
                 participants: {},
                 quizId: selectedQuiz.id,
                 quizTitle: selectedQuiz.title,
-                baseId: (user?.role === 'coord_base' && user.baseId) ? user.baseId : (selectedQuiz.baseId || null)
+                baseId: (user?.role === 'coord_base' && user.baseId) ? user.baseId : (selectedQuiz.baseId || null),
+                simplifiedMode: shouldBeSimplified // Force simplified mode if applicable
             });
 
             // Also keep main_event active for debugging or legacy? 
@@ -467,14 +772,13 @@ export default function QuizManagementPage() {
                 quizId: selectedQuiz.id,
                 baseId: selectedQuiz.baseId || null,
                 pin: newPin,
+                simplifiedMode: shouldBeSimplified,
                 status: 'waiting'
             });
 
             setCurrentIdx(-1);
-            setCurrentIdx(-1);
             setIsFullScreen(true);
             setShowQR(true); // Auto-show PIN/QR Code logic
-            // alert(`Área Aberta! PIN: ${newPin}`);
         } catch (error) {
             console.error(error);
             alert(`Erro ao abrir sala: ${error}`);
@@ -529,7 +833,7 @@ export default function QuizManagementPage() {
     };
 
     const endQuiz = async () => {
-        if (!selectedQuiz) return;
+        if (!selectedQuiz || isEnding) return;
         setIsEnding(true);
 
         try {
@@ -718,19 +1022,34 @@ export default function QuizManagementPage() {
                         onClose={() => setPlayingIndividualQuiz(null)}
                     />
                 )}
-            </div>
+            </div >
         );
     }
 
     return (
         <div className="space-y-6 pb-20">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">PLAY QUIZ</h1>
-                    <p className="text-text-secondary">Crie quizzes e comande a área ao vivo.</p>
+                    <h1 className="text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+                        <Gamepad2 size={40} className="text-primary" />
+                        Arena Quiz
+                    </h1>
+                    <p className="text-text-secondary font-medium">Crie, gerencie e acompanhe o desempenho em tempo real.</p>
                 </div>
-                <div className="flex gap-2">
+
+                {user?.role === 'master' && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRepairDuplicates}
+                        className="text-[10px] text-gray-400 border-dashed hover:text-red-500 hover:border-red-500"
+                    >
+                        DEBUG: REPARAR PONTOS
+                    </Button>
+                )}
+
+                <div className="flex gap-3">
                     <Button
                         onClick={handleCreateClick}
                         className="bg-primary hover:bg-primary/90 text-white gap-2"
@@ -833,6 +1152,20 @@ export default function QuizManagementPage() {
                                             >
                                                 <Edit3 size={16} />
                                             </Button>
+                                            {user?.role === 'master' && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="flex-1 text-primary hover:bg-primary/10"
+                                                    onClick={() => {
+                                                        setQuizToCopy(quiz);
+                                                        setIsCopyModalOpen(true);
+                                                    }}
+                                                    title="Copiar para Base"
+                                                >
+                                                    <Copy size={16} />
+                                                </Button>
+                                            )}
                                             <Button
                                                 variant="outline"
                                                 size="sm"
@@ -851,309 +1184,329 @@ export default function QuizManagementPage() {
             )}
 
             {/* Content Tab: Arena */}
-            {activeTab === "arena" && (
-                <div className="space-y-6">
-                    {!selectedQuiz ? (
-                        <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
-                            <MonitorPlay size={48} className="mx-auto text-gray-300 mb-4" />
-                            <h3 className="text-lg font-bold text-text-primary">Nenhum quiz selecionado</h3>
-                            <p className="text-text-secondary mb-4">Vá para a aba "Meus Quizzes" e clique em "Jogar na Área".</p>
-                            <Button onClick={() => setActiveTab("quizzes")}>Escolher Quiz</Button>
-                        </div>
-                    ) : (
-                        <div className="space-y-6">
-                            {/* Control Bar */}
-                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
-                                <div>
-                                    <span className="text-xs font-bold text-primary uppercase tracking-wider mb-1 block">Quiz Selecionado</span>
-                                    <h2 className="text-2xl font-bold flex items-center gap-2">
-                                        {selectedQuiz.title}
-                                        <span className={clsx(
-                                            "text-xs px-2 py-1 rounded-full border",
-                                            liveStatus === 'in_progress' ? "bg-green-100 text-green-700 border-green-200" :
-                                                liveStatus === 'waiting' ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
-                                                    "bg-gray-100 text-gray-500 border-gray-200"
-                                        )}>
-                                            {liveStatus === 'idle' ? 'Inativo' : liveStatus === 'waiting' ? 'Aguardando' : liveStatus === 'in_progress' ? 'Ao Vivo' : 'Finalizado'}
-                                        </span>
-                                    </h2>
-                                    <p className="text-text-secondary text-sm">{selectedQuiz.questions.length} questões na fila</p>
-                                </div>
-
-                                <div className="flex gap-3">
-                                    {liveStatus === 'idle' || liveStatus === 'finished' ? (
-                                        <Button onClick={startLiveQuiz} disabled={isStarting} className="bg-green-600 hover:bg-green-700 text-white gap-2 px-8">
-                                            <Play size={20} /> Abrir Sala
-                                        </Button>
-                                    ) : (
-                                        <>
-                                            <>
-                                                <Button variant="outline" onClick={() => setShowQR(true)} className="text-gray-700" title="Mostrar QR Code">
-                                                    <QrCode size={20} />
-                                                </Button>
-
-                                                {!isResultsVisible ? (
-                                                    <Button variant="outline" onClick={() => toggleResults(true)} title="Revelar Resposta" className="gap-2">
-                                                        <CheckCircle2 size={20} /> Revelar
-                                                    </Button>
-                                                ) : (
-                                                    <Button variant="outline" onClick={toggleLeaderboard} title={showLeaderboard ? "Voltar à Pergunta" : "Ver Ranking"} className="gap-2 bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100">
-                                                        <Award size={20} /> {showLeaderboard ? "Ocultar Ranking" : "Ranking"}
-                                                    </Button>
-                                                )}
-
-                                                <Button
-                                                    onClick={() => broadcastQuestion(currentIdx + 1)}
-                                                    disabled={currentIdx >= selectedQuiz.questions.length - 1}
-                                                    className="gap-2"
-                                                >
-                                                    Próxima <ArrowRight size={20} />
-                                                </Button>
-                                                <Button variant="danger" onClick={endQuiz}>
-                                                    Encerrar
-                                                </Button>
-                                            </>
-                                        </>
-                                    )}
-                                </div>
+            {
+                activeTab === "arena" && (
+                    <div className="space-y-6">
+                        {!selectedQuiz ? (
+                            <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
+                                <MonitorPlay size={48} className="mx-auto text-gray-300 mb-4" />
+                                <h3 className="text-lg font-bold text-text-primary">Nenhum quiz selecionado</h3>
+                                <p className="text-text-secondary mb-4">Vá para a aba "Meus Quizzes" e clique em "Jogar na Área".</p>
+                                <Button onClick={() => setActiveTab("quizzes")}>Escolher Quiz</Button>
                             </div>
-
-                            {/* Live View */}
-                            {liveStatus !== 'idle' && (
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                    {/* Question Card */}
-                                    <div className="lg:col-span-2 space-y-4">
-                                        <div className="card-soft p-6 bg-white relative overflow-hidden">
-                                            {currentIdx >= 0 ? (
-                                                <div className="space-y-6">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="bg-primary/10 text-primary font-bold px-3 py-1 rounded-full text-xs">
-                                                            Questão {currentIdx + 1}/{selectedQuiz.questions.length}
-                                                        </span>
-                                                        <div className="text-right">
-                                                            <div className="font-bold text-2xl text-primary">{selectedQuiz.questions[currentIdx].xpValue} XP</div>
-                                                            <div className="text-xs text-text-secondary">{selectedQuiz.questions[currentIdx].timeLimit}s</div>
-                                                        </div>
-                                                    </div>
-                                                    <h3 className="text-xl font-bold">{selectedQuiz.questions[currentIdx].statement}</h3>
-
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                        {selectedQuiz.questions[currentIdx].alternatives.map((alt, idx) => {
-                                                            const count = stats[idx] || 0;
-                                                            const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
-                                                            return (
-                                                                <div key={idx} className={clsx(
-                                                                    "p-6 rounded-2xl border-2 relative overflow-hidden transition-all h-24 flex items-center",
-                                                                    (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-100" : "bg-white border-gray-100"
-                                                                )}>
-                                                                    {isResultsVisible && (
-                                                                        <div
-                                                                            className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
-                                                                            style={{ width: `${percentage}%` }}
-                                                                        />
-                                                                    )}
-                                                                    <div className="relative z-10 flex justify-between items-center w-full">
-                                                                        <span className="font-bold text-xl flex items-center gap-3">
-                                                                            <span className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm">{String.fromCharCode(65 + idx)}</span>
-                                                                            {alt.text}
-                                                                        </span>
-                                                                        {isResultsVisible && <span className="font-black text-2xl">{Math.round(percentage)}%</span>}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-10">
-                                                    <h3 className="text-xl font-bold text-primary animate-pulse">Aguardando início...</h3>
-                                                    <p className="text-text-secondary">Os participantes estão entrando na sala.</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Sidebar Stats (Inline only) */}
-                                    {!isFullScreen && (
-                                        <div className="space-y-4">
-                                            <div className="bg-primary text-white p-6 rounded-2xl text-center">
-                                                <UsersIcon size={32} className="mx-auto mb-2 opacity-80" />
-                                                <div className="text-4xl font-black">{totalAnswers}</div>
-                                                <div className="text-sm opacity-80 uppercase tracking-widest font-bold">Respostas</div>
-                                            </div>
-                                            <Button
-                                                onClick={() => setIsFullScreen(true)}
-                                                className="w-full py-6 text-lg gap-2 bg-gray-900 text-white hover:bg-black"
-                                            >
-                                                <Maximize2 size={24} /> Tela Cheia
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Full Screen Overlay */}
-                            {isFullScreen && (
-                                <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col">
-                                    {/* Top Bar */}
-                                    <div className="bg-white p-4 shadow-md flex justify-between items-center shrink-0">
-                                        <div className="flex items-center gap-4">
-                                            <h2 className="text-xl font-bold">{selectedQuiz?.title}</h2>
-                                            <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">
-                                                {currentIdx + 1}/{selectedQuiz?.questions.length}
+                        ) : (
+                            <div className="space-y-6">
+                                {/* Control Bar */}
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+                                    <div>
+                                        <span className="text-xs font-bold text-primary uppercase tracking-wider mb-1 block">Quiz Selecionado</span>
+                                        <h2 className="text-2xl font-bold flex items-center gap-2">
+                                            {selectedQuiz.title}
+                                            <span className={clsx(
+                                                "text-xs px-2 py-1 rounded-full border",
+                                                liveStatus === 'in_progress' ? "bg-green-100 text-green-700 border-green-200" :
+                                                    liveStatus === 'waiting' ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
+                                                        "bg-gray-100 text-gray-500 border-gray-200"
+                                            )}>
+                                                {liveStatus === 'idle' ? 'Inativo' : liveStatus === 'waiting' ? 'Aguardando' : liveStatus === 'in_progress' ? 'Ao Vivo' : 'Finalizado'}
                                             </span>
-                                        </div>
-                                        <div className="flex items-center gap-6">
-                                            <div className="text-center">
-                                                <span className="block text-2xl font-black text-primary">{totalAnswers}</span>
-                                                <span className="text-[10px] font-bold text-gray-400 uppercase">Respostas</span>
+                                        </h2>
+                                        <p className="text-text-secondary text-sm">{selectedQuiz.questions.length} questões na fila</p>
+                                    </div>
+
+                                    <div className="flex flex-col md:flex-row items-center gap-6">
+                                        {/* Toggle Modo Simplificado (Master ou Missionários de Cristo) */}
+                                        {(user?.role === 'master' || allBases?.find(b => b.id === user?.baseId)?.name?.toLowerCase().includes("missionários de cristo")) && (liveStatus === 'idle' || liveStatus === 'finished') && (
+                                            <div className="flex items-center gap-3 bg-yellow-50 px-4 py-2 rounded-xl border border-yellow-100">
+                                                <input
+                                                    type="checkbox"
+                                                    id="simplifiedMode"
+                                                    className="w-5 h-5 text-yellow-600 rounded focus:ring-yellow-500"
+                                                    checked={isSimplifiedMode}
+                                                    onChange={e => setIsSimplifiedMode(e.target.checked)}
+                                                />
+                                                <label htmlFor="simplifiedMode" className="text-sm font-bold text-yellow-800 cursor-pointer">
+                                                    Modo Sem Login
+                                                </label>
                                             </div>
-                                            <Button variant="ghost" onClick={() => setIsFullScreen(false)}>
-                                                <Minimize2 size={24} />
-                                            </Button>
-                                        </div>
-                                    </div>
-
-                                    {/* Main Content Area */}
-                                    <div className="flex-1 p-8 flex flex-col overflow-hidden">
-                                        <div className="flex-1 bg-white rounded-3xl shadow-lg border border-gray-200 overflow-hidden relative flex flex-col">
-                                            {/* Reuse same logic for Leaderboard/Question View */}
-                                            {showLeaderboard ? (
-                                                <div className="flex-1 flex flex-col items-center justify-center p-12 bg-gray-50/50">
-                                                    <div className="text-center mb-8">
-                                                        <h3 className="text-4xl font-black text-primary uppercase tracking-widest mb-2">Ranking</h3>
-                                                        <div className="w-24 h-2 bg-yellow-400 mx-auto rounded-full" />
-                                                    </div>
-                                                    <div className="space-y-4 w-full max-w-3xl">
-                                                        {liveLeaderboard.map((player, idx) => (
-                                                            <div key={idx} className={clsx(
-                                                                "flex items-center justify-between p-6 rounded-2xl border-2 transform transition-all",
-                                                                idx === 0 ? "bg-yellow-50 border-yellow-400 scale-105 shadow-xl" :
-                                                                    idx === 1 ? "bg-gray-50 border-gray-300 scale-100 shadow-md" :
-                                                                        idx === 2 ? "bg-orange-50 border-orange-300 scale-100 shadow-sm" :
-                                                                            "bg-white border-gray-100"
-                                                            )}>
-                                                                <div className="flex items-center gap-6">
-                                                                    <div className={clsx(
-                                                                        "w-12 h-12 rounded-full flex items-center justify-center font-black text-2xl text-white",
-                                                                        idx === 0 ? "bg-yellow-400" :
-                                                                            idx === 1 ? "bg-gray-400" :
-                                                                                idx === 2 ? "bg-orange-400" : "bg-primary/20 text-primary"
-                                                                    )}>
-                                                                        {idx + 1}
-                                                                    </div>
-                                                                    <span className="font-bold text-3xl">{player.name}</span>
-                                                                </div>
-                                                                <div className="font-black text-4xl text-primary">{player.score} XP</div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex-1 flex flex-col">
-                                                    {/* Question Text */}
-                                                    <div className="bg-white p-8 border-b flex items-center justify-center min-h-[200px]">
-                                                        <h3 className="text-4xl md:text-5xl font-black text-center leading-tight">
-                                                            {selectedQuiz?.questions[currentIdx]?.statement}
-                                                        </h3>
-                                                    </div>
-
-                                                    {/* Alternatives Grid */}
-                                                    <div className="flex-1 grid grid-cols-2 gap-4 p-8 bg-gray-50">
-                                                        {selectedQuiz?.questions[currentIdx]?.alternatives.map((alt, idx) => {
-                                                            const count = stats[idx] || 0;
-                                                            const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
-                                                            return (
-                                                                <div key={idx} className={clsx(
-                                                                    "rounded-2xl border-4 relative overflow-hidden transition-all flex items-center px-8 shadow-sm",
-                                                                    (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-200" : "bg-white border-gray-200"
-                                                                )}>
-                                                                    {isResultsVisible && (
-                                                                        <div
-                                                                            className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
-                                                                            style={{ width: `${percentage}%` }}
-                                                                        />
-                                                                    )}
-                                                                    <div className="relative z-10 flex justify-between items-center w-full">
-                                                                        <div className="flex items-center gap-6">
-                                                                            <div className={clsx(
-                                                                                "w-16 h-16 rounded-lg flex items-center justify-center text-4xl text-white font-black shadow-inner border-2 border-white/20",
-                                                                                idx % 4 === 0 ? "bg-red-500" : idx % 4 === 1 ? "bg-blue-500" : idx % 4 === 2 ? "bg-yellow-500" : "bg-green-500"
-                                                                            )}>
-                                                                                {["A", "B", "C", "D"][idx % 4]}
-                                                                            </div>
-                                                                            <span className="font-bold text-3xl">{alt.text}</span>
-                                                                        </div>
-                                                                        {isResultsVisible && <span className="font-black text-4xl">{Math.round(percentage)}%</span>}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Bottom Control Bar */}
-                                    <div className="bg-white p-6 border-t border-gray-200 flex justify-center gap-4 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
-                                        {!isResultsVisible ? (
-                                            <Button onClick={() => toggleResults(true)} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-primary text-white hover:bg-primary/90 shadow-xl hover:scale-105 transition-all">
-                                                <CheckCircle2 size={32} /> Revelar Resposta
-                                            </Button>
-                                        ) : (
-                                            <Button onClick={toggleLeaderboard} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 hover:bg-yellow-300 shadow-xl hover:scale-105 transition-all">
-                                                <Award size={32} /> {showLeaderboard ? "Ocultar Ranking" : "Ver Ranking"}
-                                            </Button>
                                         )}
 
-                                        <Button
-                                            onClick={() => broadcastQuestion(currentIdx + 1)}
-                                            disabled={currentIdx >= (selectedQuiz?.questions.length || 0) - 1}
-                                            className="h-16 px-12 text-xl gap-3 rounded-2xl bg-gray-800 text-white hover:bg-black hover:scale-105 transition-all"
-                                        >
-                                            Próxima <ArrowRight size={32} />
-                                        </Button>
+                                        <div className="flex gap-3">
+                                            {liveStatus === 'idle' || liveStatus === 'finished' ? (
+                                                <Button onClick={startLiveQuiz} disabled={isStarting} className="bg-green-600 hover:bg-green-700 text-white gap-2 px-8">
+                                                    <Play size={20} /> Abrir Sala
+                                                </Button>
+                                            ) : (
+                                                <>
+                                                    <>
+                                                        <Button variant="outline" onClick={() => setShowQR(true)} className="text-gray-700" title="Mostrar QR Code">
+                                                            <QrCode size={20} />
+                                                        </Button>
 
-                                        <Button variant="danger" onClick={endQuiz} className="h-16 px-8 rounded-2xl">
-                                            Encerrar
-                                        </Button>
+                                                        {!isResultsVisible ? (
+                                                            <Button variant="outline" onClick={() => toggleResults(true)} title="Revelar Resposta" className="gap-2">
+                                                                <CheckCircle2 size={20} /> Revelar
+                                                            </Button>
+                                                        ) : (
+                                                            <Button variant="outline" onClick={toggleLeaderboard} title={showLeaderboard ? "Voltar à Pergunta" : "Ver Ranking"} className="gap-2 bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100">
+                                                                <Award size={20} /> {showLeaderboard ? "Ocultar Ranking" : "Ranking"}
+                                                            </Button>
+                                                        )}
+
+                                                        <Button
+                                                            onClick={() => broadcastQuestion(currentIdx + 1)}
+                                                            disabled={currentIdx >= selectedQuiz.questions.length - 1}
+                                                            className="gap-2"
+                                                        >
+                                                            Próxima <ArrowRight size={20} />
+                                                        </Button>
+                                                        <Button variant="danger" onClick={endQuiz} disabled={isEnding}>
+                                                            {isEnding ? "Encerrando..." : "Encerrar"}
+                                                        </Button>
+                                                    </>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            )}
 
-                            {/* QR Code Modal for Big Screen */}
-                            {showQR && (
-                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowQR(false)}>
-                                    <div className="bg-white p-8 rounded-3xl shadow-2xl scale-in-center flex flex-col items-center gap-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-                                        <div className="text-center">
-                                            <h3 className="text-2xl font-black text-gray-900 mb-2">Entre na Área!</h3>
-                                            <p className="text-gray-500">Escaneie ou acesse <strong>baseteen-admin.vercel.app/play</strong></p>
-                                        </div>
-                                        <div className="bg-white p-4 rounded-xl border-2 border-primary/20 shadow-inner">
-                                            <QRCode
-                                                value={`https://baseteen-admin.vercel.app/play?code=${gamePin}`}
-                                                size={200}
-                                                viewBox={`0 0 256 256`}
-                                                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                            />
-                                        </div>
-                                        <div className="text-center w-full">
-                                            <p className="text-sm text-gray-400 mb-2">PIN DO JOGO</p>
-                                            <div className="bg-gray-100 p-4 rounded-xl text-4xl font-black tracking-[0.5em] text-center w-full text-gray-800">
-                                                {gamePin || "------"}
+                                {/* Live View */}
+                                {liveStatus !== 'idle' && (
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                        {/* Question Card */}
+                                        <div className="lg:col-span-2 space-y-4">
+                                            <div className="card-soft p-6 bg-white relative overflow-hidden">
+                                                {currentIdx >= 0 ? (
+                                                    <div className="space-y-6">
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="bg-primary/10 text-primary font-bold px-3 py-1 rounded-full text-xs">
+                                                                Questão {currentIdx + 1}/{selectedQuiz.questions.length}
+                                                            </span>
+                                                            <div className="text-right">
+                                                                <div className="font-bold text-2xl text-primary">{selectedQuiz.questions[currentIdx].xpValue} XP</div>
+                                                                <div className="text-xs text-text-secondary">{selectedQuiz.questions[currentIdx].timeLimit}s</div>
+                                                            </div>
+                                                        </div>
+                                                        <h3 className="text-3xl md:text-5xl font-black mb-8">{selectedQuiz.questions[currentIdx].statement}</h3>
+
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {selectedQuiz.questions[currentIdx].alternatives.filter((alt: any) => alt.text?.trim()).map((alt, idx) => {
+                                                                const count = stats[idx] || 0;
+                                                                const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
+                                                                return (
+                                                                    <div key={idx} className={clsx(
+                                                                        "p-6 rounded-2xl border-2 relative overflow-hidden transition-all h-24 flex items-center",
+                                                                        (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-100" : "bg-white border-gray-100"
+                                                                    )}>
+                                                                        {isResultsVisible && (
+                                                                            <div
+                                                                                className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
+                                                                                style={{ width: `${percentage}%` }}
+                                                                            />
+                                                                        )}
+                                                                        <div className="relative z-10 flex justify-between items-center w-full">
+                                                                            <span className="font-black text-2xl md:text-4xl flex items-center gap-4">
+                                                                                <span className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-xl">{String.fromCharCode(65 + idx)}</span>
+                                                                                {alt.text}
+                                                                            </span>
+                                                                            {isResultsVisible && <span className="font-black text-2xl">{Math.round(percentage)}%</span>}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-10">
+                                                        <h3 className="text-xl font-bold text-primary animate-pulse">Aguardando início...</h3>
+                                                        <p className="text-text-secondary">Os participantes estão entrando na sala.</p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        <Button className="w-full h-12" onClick={() => setShowQR(false)}>
-                                            Fechar
-                                        </Button>
+
+                                        {/* Sidebar Stats (Inline only) */}
+                                        {!isFullScreen && (
+                                            <div className="space-y-4">
+                                                <div className="bg-primary text-white p-6 rounded-2xl text-center">
+                                                    <UsersIcon size={32} className="mx-auto mb-2 opacity-80" />
+                                                    <div className="text-4xl font-black">{totalAnswers}</div>
+                                                    <div className="text-sm opacity-80 uppercase tracking-widest font-bold">Respostas</div>
+                                                </div>
+                                                <Button
+                                                    onClick={() => setIsFullScreen(true)}
+                                                    className="w-full py-6 text-lg gap-2 bg-gray-900 text-white hover:bg-black"
+                                                >
+                                                    <Maximize2 size={24} /> Tela Cheia
+                                                </Button>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
+                                )}
+
+                                {/* Full Screen Overlay */}
+                                {isFullScreen && (
+                                    <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col">
+                                        {/* Top Bar */}
+                                        <div className="bg-white p-4 shadow-md flex justify-between items-center shrink-0">
+                                            <div className="flex items-center gap-4">
+                                                <h2 className="text-xl font-bold">{selectedQuiz?.title}</h2>
+                                                <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">
+                                                    {currentIdx + 1}/{selectedQuiz?.questions.length}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-6">
+                                                <div className="text-center">
+                                                    <span className="block text-2xl font-black text-primary">{totalAnswers}</span>
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase">Respostas</span>
+                                                </div>
+                                                <Button variant="ghost" onClick={() => setIsFullScreen(false)}>
+                                                    <Minimize2 size={24} />
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        {/* Main Content Area */}
+                                        <div className="flex-1 p-8 flex flex-col overflow-hidden">
+                                            <div className="flex-1 bg-white rounded-3xl shadow-lg border border-gray-200 overflow-hidden relative flex flex-col">
+                                                {/* Reuse same logic for Leaderboard/Question View */}
+                                                {showLeaderboard ? (
+                                                    <div className="flex-1 flex flex-col items-center justify-center p-12 bg-gray-50/50">
+                                                        <div className="text-center mb-8">
+                                                            <h3 className="text-4xl font-black text-primary uppercase tracking-widest mb-2">Ranking</h3>
+                                                            <div className="w-24 h-2 bg-yellow-400 mx-auto rounded-full" />
+                                                        </div>
+                                                        <div className="space-y-4 w-full max-w-3xl">
+                                                            {liveLeaderboard.map((player, idx) => (
+                                                                <div key={idx} className={clsx(
+                                                                    "flex items-center justify-between p-6 rounded-2xl border-2 transform transition-all",
+                                                                    idx === 0 ? "bg-yellow-50 border-yellow-400 scale-105 shadow-xl" :
+                                                                        idx === 1 ? "bg-gray-50 border-gray-300 scale-100 shadow-md" :
+                                                                            idx === 2 ? "bg-orange-50 border-orange-300 scale-100 shadow-sm" :
+                                                                                "bg-white border-gray-100"
+                                                                )}>
+                                                                    <div className="flex items-center gap-6">
+                                                                        <div className={clsx(
+                                                                            "w-12 h-12 rounded-full flex items-center justify-center font-black text-2xl text-white",
+                                                                            idx === 0 ? "bg-yellow-400" :
+                                                                                idx === 1 ? "bg-gray-400" :
+                                                                                    idx === 2 ? "bg-orange-400" : "bg-primary/20 text-primary"
+                                                                        )}>
+                                                                            {idx + 1}
+                                                                        </div>
+                                                                        <span className="font-bold text-3xl">{player.name}</span>
+                                                                    </div>
+                                                                    <div className="font-black text-4xl text-primary">{player.score} XP</div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex-1 flex flex-col">
+                                                        {/* Question Text */}
+                                                        <div className="bg-white p-8 border-b flex items-center justify-center min-h-[200px]">
+                                                            <h3 className="text-4xl md:text-5xl font-black text-center leading-tight">
+                                                                {selectedQuiz?.questions[currentIdx]?.statement}
+                                                            </h3>
+                                                        </div>
+
+                                                        {/* Alternatives Grid */}
+                                                        <div className="flex-1 grid grid-cols-2 gap-4 p-8 bg-gray-50">
+                                                            {selectedQuiz?.questions[currentIdx]?.alternatives.filter((alt: any) => alt.text?.trim()).map((alt, idx) => {
+                                                                const count = stats[idx] || 0;
+                                                                const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
+                                                                return (
+                                                                    <div key={idx} className={clsx(
+                                                                        "rounded-2xl border-4 relative overflow-hidden transition-all flex items-center px-8 shadow-sm",
+                                                                        (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-200" : "bg-white border-gray-200"
+                                                                    )}>
+                                                                        {isResultsVisible && (
+                                                                            <div
+                                                                                className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
+                                                                                style={{ width: `${percentage}%` }}
+                                                                            />
+                                                                        )}
+                                                                        <div className="relative z-10 flex justify-between items-center w-full">
+                                                                            <div className="flex items-center gap-6">
+                                                                                <div className={clsx(
+                                                                                    "w-16 h-16 rounded-lg flex items-center justify-center text-4xl text-white font-black shadow-inner border-2 border-white/20",
+                                                                                    idx % 4 === 0 ? "bg-red-500" : idx % 4 === 1 ? "bg-blue-500" : idx % 4 === 2 ? "bg-yellow-500" : "bg-green-500"
+                                                                                )}>
+                                                                                    {["A", "B", "C", "D"][idx % 4]}
+                                                                                </div>
+                                                                                <span className="font-bold text-3xl">{alt.text}</span>
+                                                                            </div>
+                                                                            {isResultsVisible && <span className="font-black text-4xl">{Math.round(percentage)}%</span>}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Bottom Control Bar */}
+                                        <div className="bg-white p-6 border-t border-gray-200 flex justify-center gap-4 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+                                            {!isResultsVisible ? (
+                                                <Button onClick={() => toggleResults(true)} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-primary text-white hover:bg-primary/90 shadow-xl hover:scale-105 transition-all">
+                                                    <CheckCircle2 size={32} /> Revelar Resposta
+                                                </Button>
+                                            ) : (
+                                                <Button onClick={toggleLeaderboard} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 hover:bg-yellow-300 shadow-xl hover:scale-105 transition-all">
+                                                    <Award size={32} /> {showLeaderboard ? "Ocultar Ranking" : "Ver Ranking"}
+                                                </Button>
+                                            )}
+
+                                            <Button
+                                                onClick={() => broadcastQuestion(currentIdx + 1)}
+                                                disabled={currentIdx >= (selectedQuiz?.questions.length || 0) - 1}
+                                                className="h-16 px-12 text-xl gap-3 rounded-2xl bg-gray-800 text-white hover:bg-black hover:scale-105 transition-all"
+                                            >
+                                                Próxima <ArrowRight size={32} />
+                                            </Button>
+
+                                            <Button variant="danger" onClick={endQuiz} className="h-16 px-8 rounded-2xl">
+                                                Encerrar
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* QR Code Modal for Big Screen */}
+                                {showQR && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowQR(false)}>
+                                        <div className="bg-white p-8 rounded-3xl shadow-2xl scale-in-center flex flex-col items-center gap-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+                                            <div className="text-center">
+                                                <p className="text-gray-500 font-bold mb-1 uppercase tracking-wider text-xs">Acesse e use o PIN</p>
+                                                <p className="text-xl font-black text-primary mb-6">baseteen.vercel.app/play</p>
+
+                                                <div className="bg-white p-4 rounded-3xl shadow-inner border-2 border-primary/10 mb-6 group transition-all hover:scale-105">
+                                                    <QRCode
+                                                        value={`https://baseteen.vercel.app/play?code=${gamePin}`}
+                                                        size={250}
+                                                        level="H"
+                                                        viewBox={`0 0 256 256`}
+                                                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                                    />
+                                                </div>
+
+                                                <p className="text-sm text-gray-400 mb-2 font-bold uppercase tracking-widest">PIN DO JOGO</p>
+                                                <div className="bg-primary/5 p-6 rounded-3xl text-5xl font-black tracking-[0.3em] text-center w-full text-primary border-2 border-primary/20 shadow-sm">
+                                                    {gamePin || "------"}
+                                                </div>
+                                            </div>
+                                            <Button className="w-full h-12" onClick={() => setShowQR(false)}>
+                                                Fechar
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
             {/* Content Tab: History */}
             {
@@ -1248,7 +1601,7 @@ export default function QuizManagementPage() {
                                         />
                                     </div>
 
-                                    {/* Opção de Visibilidade para Alunos (Apenas se tiver baseId ou for Admin/Master para testes) */}
+                                    {/* Opção de Visibilidade para Alunos */}
                                     {(user?.role === 'coord_base' || user?.role === 'master' || user?.role === 'admin') && (
                                         <div className="md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-4">
                                             <input
@@ -1281,6 +1634,9 @@ export default function QuizManagementPage() {
                                                     <Upload size={16} /> Importar Excel
                                                 </div>
                                             </label>
+                                            <Button variant="outline" onClick={() => setIsTextImportOpen(true)} size="sm" className="gap-2">
+                                                <FileText size={16} /> Colar Texto
+                                            </Button>
                                             <Button onClick={addQuestion} size="sm" className="gap-2">
                                                 <Plus size={16} /> Adicionar
                                             </Button>
@@ -1374,6 +1730,100 @@ export default function QuizManagementPage() {
                     </div>
                 )
             }
-        </div>
+
+            {/* Modal Importação de Texto */}
+            {
+                isTextImportOpen && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl scale-in-center">
+                            <div className="p-6 bg-gray-900 text-white flex justify-between items-center rounded-t-3xl">
+                                <div className="flex items-center gap-3">
+                                    <FileText size={24} className="text-primary" />
+                                    <div>
+                                        <h2 className="text-xl font-black">Importar via Texto</h2>
+                                        <p className="text-gray-400 text-xs uppercase tracking-widest font-bold">Colar lista formatada</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsTextImportOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                                    <X size={24} />
+                                </button>
+                            </div>
+                            <div className="p-8 space-y-6">
+                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                                    <h4 className="font-bold text-blue-900 text-sm mb-2 flex items-center gap-2">
+                                        <AlertCircle size={16} /> Formato Esperado:
+                                    </h4>
+                                    <code className="text-[11px] text-blue-700 block bg-white/50 p-2 rounded border border-blue-200 font-mono">
+                                        Pergunta; Alt A; Alt B; Alt C; Alt D; Gabarito(A,B,C ou D); [Tempo]; [XP]
+                                    </code>
+                                    <p className="text-[10px] text-blue-600 mt-2">
+                                        * Use ponto e vírgula (;) para separar as colunas.<br />
+                                        * Ex: Quem descobriu o Brasil?; Pedro Álvares; Colombo; Cabral; Vasco; C; 30; 100
+                                    </p>
+                                </div>
+                                <textarea
+                                    className="w-full h-80 bg-gray-50 rounded-2xl p-4 font-mono text-sm border-2 border-gray-100 focus:border-primary/30 focus:ring-0 transition-all"
+                                    placeholder={"Cole as perguntas aqui...\nUma por linha.\nEx: Qual a cor?; Azul; Verde; Vermelho; Rosa; A"}
+                                    value={textImportValue}
+                                    onChange={e => setTextImportValue(e.target.value)}
+                                />
+                                <div className="flex gap-4">
+                                    <Button variant="outline" className="flex-1" onClick={() => setIsTextImportOpen(false)}>Cancelar</Button>
+                                    <Button className="flex-1 gap-2" onClick={handleTextImport}>
+                                        <Upload size={18} /> Processar Agora
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {isCopyModalOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl scale-in-center">
+                        <div className="p-6 bg-primary text-white flex justify-between items-center rounded-t-3xl">
+                            <div className="flex items-center gap-3">
+                                <Copy size={24} />
+                                <div>
+                                    <h2 className="text-xl font-black">Distribuir Quiz</h2>
+                                    <p className="text-blue-100 text-xs uppercase tracking-widest font-bold">Criar cópia exclusiva para base</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsCopyModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-8 space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-gray-700">Selecione a Base de Destino</label>
+                                <select
+                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-4 focus:border-primary/30 outline-none font-bold"
+                                    value={targetBaseId}
+                                    onChange={e => setTargetBaseId(e.target.value)}
+                                >
+                                    <option value="">Escolha uma base...</option>
+                                    {(allBases || []).sort((a: any, b: any) => a.name.localeCompare(b.name)).map((base: any) => (
+                                        <option key={base.id} value={base.id}>{base.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-700">
+                                <p className="font-bold mb-1">Nota:</p>
+                                <p>Isso criará uma cópia completa deste quiz que ficará visível apenas para os alunos da base selecionada.</p>
+                            </div>
+
+                            <div className="flex gap-4">
+                                <Button variant="outline" className="flex-1" onClick={() => setIsCopyModalOpen(false)}>Cancelar</Button>
+                                <Button className="flex-1 gap-2" onClick={handleCopyQuiz} disabled={!targetBaseId}>
+                                    <Share2 size={18} /> Confirmar Cópia
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div >
     );
 }
