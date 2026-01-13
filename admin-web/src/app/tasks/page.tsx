@@ -179,6 +179,9 @@ export default function TasksPage() {
     const [textImportValue, setTextImportValue] = useState("");
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        alert("Upload de arquivos temporariamente desativado para manutenção.");
+        return;
+        /*
         const file = e.target.files?.[0];
         if (!file || !auth.currentUser) return;
 
@@ -224,6 +227,7 @@ export default function TasksPage() {
         } finally {
             setIsUploading(false);
         }
+        */
     };
 
     const resetForm = () => {

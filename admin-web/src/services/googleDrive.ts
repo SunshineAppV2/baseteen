@@ -8,7 +8,8 @@ export function getDriveClient() {
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
     if (!clientEmail || !privateKey || !folderId) {
-        throw new Error("Google Drive credentials missing in environment variables.");
+        console.warn("Google Drive credentials missing. Drive integration disabled.");
+        throw new Error("Google Drive integration disabled due to missing credentials.");
     }
 
     const auth = new google.auth.GoogleAuth({

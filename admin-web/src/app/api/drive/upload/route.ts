@@ -25,7 +25,14 @@ export async function POST(req: NextRequest) {
         // Capture client origin for CORS
         const clientOrigin = req.headers.get('origin') || '*';
 
-        const { drive, folderId } = getDriveClient();
+        let drive, folderId;
+        try {
+            const client = getDriveClient();
+            drive = client.drive;
+            folderId = client.folderId;
+        } catch (e: any) {
+            return NextResponse.json({ error: "Upload temporariamente indisponível (Drive Disabled)" }, { status: 503 });
+        }
 
         // 3. Create Resumable Upload Session
         // We use the `drive.files.create` method but with `media` set to null and inspect the response? 
