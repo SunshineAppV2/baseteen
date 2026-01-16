@@ -1509,16 +1509,16 @@ export default function QuizManagementPage() {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex-1 flex flex-col">
+                                                    <div className="flex-1 flex flex-col overflow-hidden">
                                                         {/* Question Text */}
-                                                        <div className="flex-1 flex items-center justify-center p-12 text-center">
-                                                            <h3 className="text-6xl md:text-7xl font-black text-white leading-[1.1] tracking-tight drop-shadow-2xl">
+                                                        <div className="flex items-center justify-center p-6 text-center">
+                                                            <h3 className="text-5xl md:text-6xl font-black text-white leading-[1.1] tracking-tight drop-shadow-2xl">
                                                                 {selectedQuiz?.questions[currentIdx]?.statement}
                                                             </h3>
                                                         </div>
 
                                                         {/* Alternatives Grid */}
-                                                        <div className="grid grid-cols-2 gap-6 p-12 h-[450px]">
+                                                        <div className="grid grid-cols-2 gap-4 px-8 pb-4 flex-1">
                                                             {selectedQuiz?.questions[currentIdx]?.alternatives.map((alt, originalIdx) => {
                                                                 if (!alt.text?.trim()) return null;
 
@@ -1535,7 +1535,7 @@ export default function QuizManagementPage() {
 
                                                                 return (
                                                                     <div key={originalIdx} className={clsx(
-                                                                        "rounded-[32px] border-4 relative overflow-hidden transition-all flex items-center px-10 shadow-xl",
+                                                                        "rounded-[24px] border-3 relative overflow-hidden transition-all flex items-center px-6 py-4 shadow-xl min-h-[100px]",
                                                                         (isResultsVisible && alt.isCorrect) ? "border-white scale-[1.02] z-10" : "border-white/10",
                                                                         !isResultsVisible && "hover:scale-[1.01]",
                                                                         isResultsVisible && !alt.isCorrect && "opacity-40 grayscale-[0.5]"
@@ -1546,7 +1546,7 @@ export default function QuizManagementPage() {
                                                                         {(isResultsVisible && alt.isCorrect) ? (
                                                                             <div className={clsx("absolute inset-0 opacity-90", color.bg)} />
                                                                         ) : (
-                                                                            <div className={clsx("absolute left-4 top-4 w-12 h-12 rounded-2xl opacity-80 flex items-center justify-center font-black text-2xl text-white", color.bg)}>
+                                                                            <div className={clsx("absolute left-3 top-3 w-10 h-10 rounded-xl opacity-80 flex items-center justify-center font-black text-xl text-white", color.bg)}>
                                                                                 {["A", "B", "C", "D"][originalIdx]}
                                                                             </div>
                                                                         )}
@@ -1558,24 +1558,24 @@ export default function QuizManagementPage() {
                                                                             />
                                                                         )}
 
-                                                                        <div className="relative z-10 flex justify-between items-center w-full ml-16">
+                                                                        <div className="relative z-10 flex justify-between items-center w-full ml-12">
                                                                             <span className={clsx(
-                                                                                "font-black text-4xl tracking-tight leading-tight",
+                                                                                "font-black text-2xl md:text-3xl tracking-tight leading-tight",
                                                                                 (isResultsVisible && alt.isCorrect) ? "text-white" : "text-white/90"
                                                                             )}>
                                                                                 {alt.text}
                                                                             </span>
                                                                             {isResultsVisible && (
                                                                                 <div className="flex flex-col items-end">
-                                                                                    <span className="font-black text-5xl text-white">{Math.round(percentage)}%</span>
-                                                                                    <span className="text-[10px] font-bold opacity-60">{count} votos</span>
+                                                                                    <span className="font-black text-3xl text-white">{Math.round(percentage)}%</span>
+                                                                                    <span className="text-[9px] font-bold opacity-60">{count} votos</span>
                                                                                 </div>
                                                                             )}
                                                                         </div>
 
                                                                         {isResultsVisible && alt.isCorrect && (
-                                                                            <div className="absolute right-6 top-6">
-                                                                                <CheckCircle2 className="text-white" size={48} />
+                                                                            <div className="absolute right-4 top-4">
+                                                                                <CheckCircle2 className="text-white" size={32} />
                                                                             </div>
                                                                         )}
                                                                     </div>
