@@ -1445,12 +1445,12 @@ export default function QuizManagementPage() {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-6">
-                                                {liveStatus === 'in_progress' && !isResultsVisible && !showLeaderboard && (
+                                                {currentIdx >= 0 && (
                                                     <div className={clsx(
                                                         "px-6 py-3 rounded-2xl border-2 flex items-center gap-4 shadow-lg transition-all",
-                                                        timeLeft <= 5 ? "bg-red-500 border-white text-white animate-pulse scale-110" : "bg-white/10 border-white/20 text-white"
+                                                        timeLeft <= 5 && !isResultsVisible ? "bg-red-500 border-white text-white animate-pulse scale-110" : "bg-white/10 border-white/20 text-white"
                                                     )}>
-                                                        <Clock size={32} className={timeLeft <= 5 ? "animate-spin-slow" : ""} />
+                                                        <Clock size={32} className={timeLeft <= 5 && !isResultsVisible ? "animate-spin-slow" : ""} />
                                                         <span className="text-4xl font-black tracking-tighter tabular-nums">{timeLeft}s</span>
                                                     </div>
                                                 )}
