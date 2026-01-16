@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useCollection } from "@/hooks/useFirestore";
-import { Calendar, Lock, Unlock, ChevronRight, AlertCircle, CalendarCheck } from "lucide-react";
+import { Calendar, Lock, Unlock, ChevronRight, AlertCircle, CalendarCheck, Plus } from "lucide-react";
 import AttendanceSheet from "./AttendanceSheet";
 import { clsx } from "clsx";
 
@@ -13,12 +13,21 @@ interface Quarter {
     dates: any[]; // Timestamps
 }
 
+import { Button } from "@/components/ui/Button";
+
 export default function AttendancePage() {
     const { user, loading: authLoading } = useAuth();
     const { data: quarters, loading: quartersLoading } = useCollection<Quarter>("quarters");
 
     const [selectedQuarterId, setSelectedQuarterId] = useState<string | null>(null);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+    const { data: existingCalls, loading: existingLoading } = useCollection<any>("attendance_days", [
+        where('baseId', '==', user?.baseId || '0'),
+        orderBy('date', 'desc')
+    ]);
+    const [showCustomDate, setShowCustomDate] = useState(false);
+    const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Initial Selection of Quarter
     if (!selectedQuarterId && quarters.length > 0) {
@@ -84,15 +93,53 @@ export default function AttendancePage() {
                         <p className="text-text-secondary">Marque a presença e atividades semanais.</p>
                     </div>
                 </div>
-                {['coord_base', 'admin', 'master'].includes(user?.role || '') && (
-                    <button
-                        onClick={() => window.location.href = '/attendance/config'}
-                        className="text-sm font-bold text-primary hover:bg-primary/5 px-4 py-2 rounded-xl transition-colors border border-primary/20"
-                    >
-                        Configurar Pontuação
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {['coord_base', 'admin', 'master'].includes(user?.role || '') && (
+                        <button
+                            onClick={() => setShowCustomDate(!showCustomDate)}
+                            className="text-sm font-bold bg-primary text-white hover:bg-primary/90 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
+                        >
+                            <Plus size={18} />
+                            Chamada Avulsa
+                        </button>
+                    )}
+                    {['coord_base', 'admin', 'master'].includes(user?.role || '') && (
+                        <button
+                            onClick={() => window.location.href = '/attendance/config'}
+                            className="text-sm font-bold text-primary hover:bg-primary/5 px-4 py-2 rounded-xl transition-colors border border-primary/20"
+                        >
+                            Configurar Pontuação
+                        </button>
+                    )}
+                </div>
             </div>
+
+            {showCustomDate && (
+                <div className="bg-primary/5 p-6 rounded-2xl border border-primary/10 flex flex-col md:flex-row items-end gap-4 animate-in slide-in-from-top-4">
+                    <div className="flex-1 w-full">
+                        <label className="block text-sm font-bold text-primary mb-2">Selecione a Data da Chamada</label>
+                        <input
+                            type="date"
+                            value={customDate}
+                            onChange={(e) => setCustomDate(e.target.value)}
+                            className="w-full p-3 rounded-xl border border-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                    </div>
+                    <Button
+                        className="w-full md:w-auto"
+                        onClick={() => {
+                            if (customDate) {
+                                // Important: parse as local date to avoid timezone shifts
+                                const [year, month, day] = customDate.split('-').map(Number);
+                                const dateObj = new Date(year, month - 1, day, 12, 0, 0);
+                                setSelectedDate(dateObj);
+                            }
+                        }}
+                    >
+                        Abrir Chamada
+                    </Button>
+                </div>
+            )}
 
             {/* Quarter Tabs */}
             <div className="flex gap-2 border-b border-gray-100 overflow-x-auto pb-1 mb-6">
@@ -123,7 +170,8 @@ export default function AttendancePage() {
                         unlockTime.setHours(1, 0, 0, 0); // 01:00 AM
 
                         const now = new Date();
-                        const isLocked = now < unlockTime;
+                        // Bypass lock for coordinators and admins
+                        const isLocked = (now < unlockTime) && !['coord_base', 'admin', 'master', 'secretaria', 'coord_geral'].includes(user?.role || '');
 
                         return (
                             <button
@@ -170,6 +218,51 @@ export default function AttendancePage() {
             ) : (
                 <div className="p-8 text-center text-text-secondary">
                     Nenhum trimestre encontrado.
+                </div>
+            )}
+
+            {/* Extra/Existing Calls Section */}
+            {existingCalls.length > 0 && (
+                <div className="mt-12 space-y-4">
+                    <h2 className="text-lg font-bold text-text-primary px-1">Chamadas Gravadas</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {existingCalls.map((call: any) => {
+                            const date = call.date?.toDate ? call.date.toDate() : new Date(call.date.seconds * 1000);
+
+                            // Check if this date is already in the official schedule to avoid duplicates
+                            const isInSchedule = currentQuarter?.dates?.some((d: any) => {
+                                const schedDate = d.toDate ? d.toDate() : new Date(d.seconds * 1000);
+                                return schedDate.toDateString() === date.toDateString();
+                            });
+
+                            if (isInSchedule) return null;
+
+                            return (
+                                <button
+                                    key={call.id}
+                                    onClick={() => setSelectedDate(date)}
+                                    className="p-6 rounded-2xl border text-left bg-white border-gray-100 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 cursor-pointer flex justify-between items-center group transition-all"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 rounded-xl bg-green-50 text-green-600">
+                                            <CalendarCheck size={24} />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-lg text-text-primary">
+                                                Chamada Extra
+                                            </h3>
+                                            <p className="text-sm text-text-secondary">
+                                                {date.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <ChevronRight size={24} />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
         </div>

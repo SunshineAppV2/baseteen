@@ -319,11 +319,102 @@ class _DashboardPageState extends State<DashboardPage> {
                     
                     // Task Collection Stream
                     StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance.collection('tasks').limit(3).snapshots(),
+                      stream: FirebaseFirestore.instance
+                          .collection('tasks')
+                          .where(Filter.or(
+                            Filter('visibilityScope', isEqualTo: 'all'),
+                            Filter('visibilityScope', isEqualTo: 'base'),
+                            Filter('visibilityScope', isEqualTo: 'district'),
+                          ))
+                          .limit(100)
+                          .snapshots(),
                       builder: (context, taskSnapshot) {
+                        if (taskSnapshot.hasError) {
+                          debugPrint('Erro na busca de tasks: ${taskSnapshot.error}');
+                          return const SizedBox();
+                        }
                         if (!taskSnapshot.hasData) return const SizedBox();
-                        final tasks = taskSnapshot.data!.docs;
                         
+                        final String baseId = userData?['baseId'] ?? '';
+                        final String districtId = userData?['districtId'] ?? '';
+                        final String regionId = userData?['regionId'] ?? '';
+                        final String associationId = userData?['associationId'] ?? '';
+                        final String unionId = userData?['unionId'] ?? '';
+
+                        final allTasks = taskSnapshot.data!.docs;
+                        
+                        // Client-side filtering: Fix 'Mixing' and 'Target Base Type'
+                        final tasks = allTasks.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final scope = data['visibilityScope'] ?? 'all';
+                          
+                          // 1. Visibility Check: Only show what matches the user's specific hierarchy OR global
+                          bool isVisible = false;
+                          if (scope == 'all') {
+                            isVisible = true;
+                          } else if (scope == 'union') {
+                            isVisible = unionId.isNotEmpty && data['unionId'] == unionId;
+                          } else if (scope == 'association') {
+                            isVisible = associationId.isNotEmpty && data['associationId'] == associationId;
+                          } else if (scope == 'region') {
+                            isVisible = regionId.isNotEmpty && data['regionId'] == regionId;
+                          } else if (scope == 'district') {
+                            isVisible = districtId.isNotEmpty && data['districtId'] == districtId;
+                          } else if (scope == 'base') {
+                            isVisible = baseId.isNotEmpty && data['baseId'] == baseId;
+                          }
+                          
+                          if (!isVisible) return false;
+
+                          // 2. Hide duplicates (if a base-specific version of this task exists, hide the wider version)
+                          if (scope != 'base') {
+                            final hasBaseVersion = allTasks.any((doc) {
+                              final d = doc.data() as Map<String, dynamic>;
+                              return (d['visibilityScope'] == 'base' || d['isCustomized'] == true) && 
+                                     d['title'] == data['title'];
+                            });
+                            if (hasBaseVersion) return false;
+                          }
+
+                          // 3. Base Type Filtering (Soul+/Teen)
+                          final target = data['targetBaseType'] ?? 'both';
+                          final userBaseType = userData?['baseType'] ?? 'teen';
+                          
+                          if (target != 'both' && target != userBaseType) return false;
+
+                          // 3. Collective Check: Members don't see collective base tasks
+                          if (data['isBaseCollective'] == true && userData?['role'] == 'membro') return false;
+                          
+                          return true;
+                        }).toList();
+
+                        // 4. Client-side sorting (Since we removed it from Firestore to avoid index issues)
+                        tasks.sort((a, b) {
+                          final dataA = a.data() as Map<String, dynamic>;
+                          final dataB = b.data() as Map<String, dynamic>;
+                          
+                          final dateAStr = dataA['createdAt']?.toString() ?? '';
+                          final dateBStr = dataB['createdAt']?.toString() ?? '';
+                          
+                          if (dateAStr.isEmpty) return 1;
+                          if (dateBStr.isEmpty) return -1;
+                          
+                          // Descending order (newer first)
+                          return dateBStr.compareTo(dateAStr);
+                        });
+                        
+                        if (tasks.isEmpty) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 20),
+                              child: Text(
+                                'Nenhum requisito disponível para sua base.',
+                                style: TextStyle(color: Colors.grey, fontSize: 13),
+                              ),
+                            ),
+                          );
+                        }
+
                         return Column(
                           children: tasks.map((doc) {
                             final task = doc.data() as Map<String, dynamic>;
@@ -334,9 +425,14 @@ class _DashboardPageState extends State<DashboardPage> {
                                 id: doc.id,
                                 title: task['title'] ?? 'Sem Título',
                                 description: task['description'] ?? '',
-                                xp: task['xpReward'] ?? 0,
+                                xp: task['points'] ?? task['xpReward'] ?? 0,
                                 type: task['type'] ?? 'Texto',
-                                dueDate: 'Ativo',
+                                isBaseSpecific: task['visibilityScope'] == 'base' || task['isCustomized'] == true,
+                                isCollective: task['isBaseCollective'] == true,
+                                baseId: baseId,
+                                dueDate: task['deadline'] != null 
+                                  ? 'Até ${DateTime.parse(task['deadline']).day.toString().padLeft(2, '0')}/${DateTime.parse(task['deadline']).month.toString().padLeft(2, '0')}'
+                                  : 'Ativo',
                                 icon: _getIconForType(task['type']),
                               ),
                             );
@@ -455,6 +551,9 @@ class _DashboardPageState extends State<DashboardPage> {
     required String type,
     required String dueDate,
     required IconData icon,
+    bool isBaseSpecific = false,
+    bool isCollective = false,
+    String? baseId,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -480,6 +579,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 description: description,
                 xp: xp,
                 type: type,
+                isBaseCollective: isCollective,
+                baseId: baseId ?? '',
               ),
             ),
           );
@@ -503,6 +604,63 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (isBaseSpecific || isCollective)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            if (isBaseSpecific)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFF6B00), // Vibrant orange from image
+                                  borderRadius: BorderRadius.circular(20), // Pill shape
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFFF6B00).withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Text(
+                                  'REQUISITO BASE',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.black,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            if (isBaseSpecific && isCollective) const SizedBox(width: 8),
+                            if (isCollective)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary, 
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.primary.withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Text(
+                                  'COLETIVO',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.black,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [

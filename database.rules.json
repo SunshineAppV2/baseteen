@@ -2,7 +2,15 @@
     "rules": {
         ".read": true,
         "active_quizzes": {
-            ".write": "auth != null"
+            "$pin": {
+                ".write": "auth != null",
+                "participants": {
+                    ".write": true
+                },
+                "answers": {
+                    ".write": true
+                }
+            }
         }
     }
 }

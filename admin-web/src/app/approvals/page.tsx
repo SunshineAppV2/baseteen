@@ -11,7 +11,8 @@ import {
     FileText,
     MessageSquare,
     Check,
-    Award
+    Award,
+    X
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -46,6 +47,11 @@ interface Submission {
     userDistrictId?: string;
     userDisplayName?: string;
     taskDeadline?: string; // populated via fetching or join
+    review?: {
+        feedback: string;
+        reviewedAt: any;
+    };
+    awardedXp?: number;
 }
 
 import { useAuth } from "@/context/AuthContext";
@@ -81,22 +87,27 @@ export default function ApprovalsPage() {
     const { data: baseSubmissions, loading: loadingBaseSubmissions } = useCollection<any>("base_submissions", constraints);
 
     const [activeTab, setActiveTab] = useState<'individual' | 'base'>('individual');
+    const [viewMode, setViewMode] = useState<'queue' | 'history'>('queue');
 
     const filteredSubmissions = useMemo(() => {
-        return [...submissions].sort((a, b) => {
-            const dateA = a.proof?.submittedAt?.seconds || 0;
-            const dateB = b.proof?.submittedAt?.seconds || 0;
-            return dateB - dateA;
-        });
-    }, [submissions]);
+        return [...submissions]
+            .filter(s => viewMode === 'queue' ? s.status === 'pending' : (s.status === 'approved' || s.status === 'rejected'))
+            .sort((a, b) => {
+                const dateA = a.proof?.submittedAt?.seconds || 0;
+                const dateB = b.proof?.submittedAt?.seconds || 0;
+                return dateB - dateA;
+            });
+    }, [submissions, viewMode]);
 
     const filteredBaseSubmissions = useMemo(() => {
-        return [...baseSubmissions].sort((a, b) => {
-            const dateA = a.proof?.submittedAt?.seconds || 0;
-            const dateB = b.proof?.submittedAt?.seconds || 0;
-            return dateB - dateA;
-        });
-    }, [baseSubmissions]);
+        return [...baseSubmissions]
+            .filter(s => viewMode === 'queue' ? s.status === 'pending' : (s.status === 'approved' || s.status === 'rejected'))
+            .sort((a, b) => {
+                const dateA = a.proof?.submittedAt?.seconds || 0;
+                const dateB = b.proof?.submittedAt?.seconds || 0;
+                return dateB - dateA;
+            });
+    }, [baseSubmissions, viewMode]);
 
     const handleApprove = async (submission: Submission, finalXp?: number) => {
         try {
@@ -232,14 +243,132 @@ export default function ApprovalsPage() {
         }
     };
 
-    const pendingSubmissions = filteredSubmissions.filter(s => s.status === "pending");
-    const pendingBaseSubmissions = filteredBaseSubmissions.filter(s => s.status === "pending");
+    const handleRevoke = async (submission: any) => {
+        if (!window.confirm("Tem certeza que deseja revogar esta aprovação? Os pontos serão removidos do usuário.")) return;
+
+        try {
+            const xpToRemove = submission.awardedXp || 0;
+
+            // 1. Update submission status
+            await firestoreService.update("submissions", submission.id, {
+                status: "pending",
+                revokedAt: new Date(),
+                revokedBy: currentUser?.uid
+            });
+
+            // 2. Remove XP from User
+            if (submission.userId) {
+                const userRef = doc(db, "users", submission.userId);
+                await updateDoc(userRef, {
+                    "stats.currentXp": increment(-xpToRemove),
+                    "stats.completedTasks": increment(-1)
+                });
+
+                // 3. Add negative entry to history
+                await addDoc(collection(db, "users", submission.userId, "xp_history"), {
+                    amount: -xpToRemove,
+                    reason: `REVOGADO: ${submission.taskTitle}`,
+                    type: 'revocation',
+                    createdAt: serverTimestamp()
+                });
+
+                // 4. Update Base Stats
+                if (submission.baseId) {
+                    const baseRef = doc(db, "bases", submission.baseId);
+                    await updateDoc(baseRef, {
+                        totalXp: increment(-xpToRemove)
+                    });
+                }
+
+                // 5. Create Notification
+                await addDoc(collection(db, "notifications"), {
+                    userId: submission.userId,
+                    title: "Pontuação Revogada ⚠️",
+                    message: `A aprovação da tarefa "${submission.taskTitle}" foi revogada. ${xpToRemove} XP foram removidos.`,
+                    createdAt: new Date(),
+                    read: false,
+                    type: "warning"
+                });
+
+                alert(`Aprovação revogada. ${xpToRemove} XP removidos.`);
+            }
+        } catch (error) {
+            console.error("Error revoking submission:", error);
+            alert("Erro ao revogar aprovação.");
+        }
+    };
+
+    const handleRevokeBase = async (submission: any) => {
+        if (!window.confirm("Tem certeza que deseja revogar esta aprovação de base? Os pontos serão removidos da base.")) return;
+
+        try {
+            const xpToRemove = submission.awardedXp || 0;
+
+            // 1. Update submission status
+            await firestoreService.update("base_submissions", submission.id, {
+                status: "pending",
+                revokedAt: new Date(),
+                revokedBy: currentUser?.uid
+            });
+
+            // 2. Update base stats
+            const baseRef = doc(db, "bases", submission.baseId);
+            await updateDoc(baseRef, {
+                totalXp: increment(-xpToRemove),
+                completedTasks: increment(-1)
+            });
+
+            // 3. Create Notification for the person who submitted
+            if (submission.submittedBy) {
+                await addDoc(collection(db, "notifications"), {
+                    userId: submission.submittedBy,
+                    title: "Aprovação de Base Revogada 🏠",
+                    message: `A aprovação do requisito de base "${submission.taskTitle || 'Tarefa'}" foi revogada.`,
+                    createdAt: new Date(),
+                    read: false,
+                    type: "warning"
+                });
+            }
+
+            alert(`Aprovação de base revogada. ${xpToRemove} XP removidos da base.`);
+        } catch (error) {
+            console.error("Error revoking base submission:", error);
+            alert("Erro ao revogar aprovação de base.");
+        }
+    };
+
+    const pendingSubmissionsCount = submissions.filter(s => s.status === "pending").length;
+    const pendingBaseSubmissionsCount = baseSubmissions.filter(s => s.status === "pending").length;
 
     return (
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-bold tracking-tight">Fila de Aprovação</h1>
                 <p className="text-text-secondary">Revise e valide o cumprimento dos desafios.</p>
+            </div>
+
+            {/* View Toggle */}
+            <div className="flex bg-surface p-1 rounded-xl w-fit border border-gray-100 shadow-sm mb-2">
+                <button
+                    onClick={() => setViewMode('queue')}
+                    id="btn-pendentes"
+                    className={clsx(
+                        "px-6 py-2 rounded-lg text-sm font-bold transition-all",
+                        viewMode === 'queue' ? "bg-white shadow-sm text-primary" : "text-text-secondary hover:text-text-primary"
+                    )}
+                >
+                    Fila de Pendentes
+                </button>
+                <button
+                    onClick={() => setViewMode('history')}
+                    id="btn-historico"
+                    className={clsx(
+                        "px-6 py-2 rounded-lg text-sm font-bold transition-all",
+                        viewMode === 'history' ? "bg-white shadow-sm text-primary" : "text-text-secondary hover:text-text-primary"
+                    )}
+                >
+                    Ver Tudo (Histórico)
+                </button>
             </div>
 
             {/* Tabs */}
@@ -252,9 +381,9 @@ export default function ApprovalsPage() {
                         }`}
                 >
                     Requisitos Individuais
-                    {pendingSubmissions.length > 0 && (
+                    {pendingSubmissionsCount > 0 && (
                         <span className="ml-2 px-2 py-1 bg-primary text-white text-xs rounded-full">
-                            {pendingSubmissions.length}
+                            {pendingSubmissionsCount}
                         </span>
                     )}
                 </button>
@@ -267,9 +396,9 @@ export default function ApprovalsPage() {
                             }`}
                     >
                         Requisitos de Bases
-                        {pendingBaseSubmissions.length > 0 && (
+                        {pendingBaseSubmissionsCount > 0 && (
                             <span className="ml-2 px-2 py-1 bg-primary text-white text-xs rounded-full">
-                                {pendingBaseSubmissions.length}
+                                {pendingBaseSubmissionsCount}
                             </span>
                         )}
                     </button>
@@ -284,22 +413,30 @@ export default function ApprovalsPage() {
                             <div key={i} className="card-soft p-6 animate-pulse h-32" />
                         ))}
                     </div>
-                ) : pendingSubmissions.length > 0 ? (
+                ) : filteredSubmissions.length > 0 ? (
                     <div className="space-y-4">
-                        {pendingSubmissions.map((sub) => (
+                        {filteredSubmissions.map((sub) => (
                             <SubmissionCard
                                 key={sub.id}
                                 submission={sub}
                                 onApprove={handleApprove}
                                 onReject={handleReject}
+                                onRevoke={handleRevoke}
                             />
                         ))}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
                         <CheckCircle2 size={48} className="mx-auto text-success/20 mb-4" />
-                        <h3 className="text-lg font-bold text-text-primary">Tudo em dia!</h3>
-                        <p className="text-text-secondary">Nenhuma prova individual pendente para análise no momento.</p>
+                        <h3 className="text-lg font-bold text-text-primary">
+                            {viewMode === 'queue' ? "Tudo em dia!" : "Nenhum histórico"}
+                        </h3>
+                        <p className="text-text-secondary">
+                            {viewMode === 'queue'
+                                ? "Nenhuma prova individual pendente para análise no momento."
+                                : "Ainda não há registros de aprovações ou rejeições."
+                            }
+                        </p>
                     </div>
                 )
             )}
@@ -312,22 +449,30 @@ export default function ApprovalsPage() {
                             <div key={i} className="card-soft p-6 animate-pulse h-32" />
                         ))}
                     </div>
-                ) : pendingBaseSubmissions.length > 0 ? (
+                ) : filteredBaseSubmissions.length > 0 ? (
                     <div className="space-y-4">
-                        {pendingBaseSubmissions.map((sub) => (
+                        {filteredBaseSubmissions.map((sub) => (
                             <BaseSubmissionCard
                                 key={sub.id}
                                 submission={sub}
                                 onApprove={handleApproveBase}
                                 onReject={handleRejectBase}
+                                onRevoke={handleRevokeBase}
                             />
                         ))}
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
                         <CheckCircle2 size={48} className="mx-auto text-success/20 mb-4" />
-                        <h3 className="text-lg font-bold text-text-primary">Tudo em dia!</h3>
-                        <p className="text-text-secondary">Nenhuma prova de base pendente para análise no momento.</p>
+                        <h3 className="text-lg font-bold text-text-primary">
+                            {viewMode === 'queue' ? "Tudo em dia!" : "Nenhum histórico"}
+                        </h3>
+                        <p className="text-text-secondary">
+                            {viewMode === 'queue'
+                                ? "Nenhuma prova de base pendente para análise no momento."
+                                : "Ainda não há registros de aprovações ou rejeições de bases."
+                            }
+                        </p>
                     </div>
                 )
             )}
@@ -335,7 +480,7 @@ export default function ApprovalsPage() {
     );
 }
 
-function SubmissionCard({ submission, onApprove, onReject }: { submission: Submission, onApprove: any, onReject: any }) {
+function SubmissionCard({ submission, onApprove, onReject, onRevoke }: { submission: Submission, onApprove: any, onReject: any, onRevoke: any }) {
     const [taskDeadline, setTaskDeadline] = useState<string | null>(null);
     const [taskPoints, setTaskPoints] = useState<number>(submission.xpReward || 0);
 
@@ -393,11 +538,23 @@ function SubmissionCard({ submission, onApprove, onReject }: { submission: Submi
                     </div>
 
                     <div className="flex gap-2">
-                        <div className="flex items-center gap-2 px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-xs font-bold uppercase tracking-wider">
-                            <Clock size={14} />
-                            Pendente
-                        </div>
-                        {isLate && (
+                        {submission.status === 'pending' ? (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                                <Clock size={14} />
+                                Pendente
+                            </div>
+                        ) : submission.status === 'approved' ? (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                                <CheckCircle2 size={14} />
+                                Aprovado
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                                <XCircle size={14} />
+                                Rejeitado
+                            </div>
+                        )}
+                        {isLate && submission.status === 'pending' && (
                             <div className="flex items-center gap-2 px-3 py-1 bg-red-100 text-red-600 rounded-full text-xs font-bold uppercase tracking-wider animate-pulse">
                                 ⚠️ ATRASADO (-70% XP)
                             </div>
@@ -434,27 +591,44 @@ function SubmissionCard({ submission, onApprove, onReject }: { submission: Submi
             </div>
 
             <div className="flex shrink-0 gap-3 w-full md:w-auto">
-                <Button
-                    variant="outline"
-                    className="flex-1 md:flex-none border-error text-error hover:bg-red-50"
-                    onClick={() => onReject(submission)}
-                >
-                    <XCircle size={20} className="mr-2" />
-                    Rejeitar
-                </Button>
-                <Button
-                    className="flex-1 md:flex-none"
-                    onClick={() => onApprove(submission, finalPoints)}
-                >
-                    <CheckCircle2 size={20} className="mr-2" />
-                    Aprovar ({finalPoints} XP)
-                </Button>
+                {submission.status === 'pending' ? (
+                    <>
+                        <Button
+                            variant="outline"
+                            className="flex-1 md:flex-none border-error text-error hover:bg-red-50"
+                            onClick={() => onReject(submission)}
+                        >
+                            <XCircle size={20} className="mr-2" />
+                            Rejeitar
+                        </Button>
+                        <Button
+                            className="flex-1 md:flex-none"
+                            onClick={() => onApprove(submission, finalPoints)}
+                        >
+                            <CheckCircle2 size={20} className="mr-2" />
+                            Aprovar ({finalPoints} XP)
+                        </Button>
+                    </>
+                ) : submission.status === 'approved' ? (
+                    <Button
+                        variant="outline"
+                        className="flex-1 md:flex-none border-warning text-warning hover:bg-yellow-50"
+                        onClick={() => onRevoke(submission)}
+                    >
+                        <X size={20} className="mr-2" />
+                        Revogar Pontuação
+                    </Button>
+                ) : (
+                    <div className="text-sm text-text-secondary italic">
+                        Rejeitado em {submission.review?.reviewedAt?.toDate ? submission.review.reviewedAt.toDate().toLocaleDateString() : 'N/A'}
+                    </div>
+                )}
             </div>
         </div >
     );
 }
 
-function BaseSubmissionCard({ submission, onApprove, onReject }: { submission: any, onApprove: any, onReject: any }) {
+function BaseSubmissionCard({ submission, onApprove, onReject, onRevoke }: { submission: any, onApprove: any, onReject: any, onRevoke: any }) {
 
     const [taskTitle, setTaskTitle] = useState<string>(submission.taskTitle || "Requisito Coletivo");
     const [taskPoints, setTaskPoints] = useState<number>(submission.xpReward || 0);
@@ -513,11 +687,23 @@ function BaseSubmissionCard({ submission, onApprove, onReject }: { submission: a
                     </div>
 
                     <div className="flex gap-2">
-                        <div className="flex items-center gap-2 px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-xs font-bold uppercase tracking-wider">
-                            <Clock size={14} />
-                            Pendente
-                        </div>
-                        {isLate && (
+                        {submission.status === 'pending' ? (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                                <Clock size={14} />
+                                Pendente
+                            </div>
+                        ) : submission.status === 'approved' ? (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                                <CheckCircle2 size={14} />
+                                Aprovado
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                                <XCircle size={14} />
+                                Rejeitado
+                            </div>
+                        )}
+                        {isLate && submission.status === 'pending' && (
                             <div className="flex items-center gap-2 px-3 py-1 bg-red-100 text-red-600 rounded-full text-xs font-bold uppercase tracking-wider animate-pulse">
                                 ⚠️ ATRASADO (-70% XP)
                             </div>
@@ -554,21 +740,38 @@ function BaseSubmissionCard({ submission, onApprove, onReject }: { submission: a
             </div>
 
             <div className="flex shrink-0 gap-3 w-full md:w-auto">
-                <Button
-                    variant="outline"
-                    className="flex-1 md:flex-none border-error text-error hover:bg-red-50"
-                    onClick={() => onReject(submission)}
-                >
-                    <XCircle size={20} className="mr-2" />
-                    Reprovar
-                </Button>
-                <Button
-                    className="flex-1 md:flex-none"
-                    onClick={() => onApprove(submission, finalPoints)}
-                >
-                    <CheckCircle2 size={20} className="mr-2" />
-                    Aprovar ({finalPoints} XP)
-                </Button>
+                {submission.status === 'pending' ? (
+                    <>
+                        <Button
+                            variant="outline"
+                            className="flex-1 md:flex-none border-error text-error hover:bg-red-50"
+                            onClick={() => onReject(submission)}
+                        >
+                            <XCircle size={20} className="mr-2" />
+                            Reprovar
+                        </Button>
+                        <Button
+                            className="flex-1 md:flex-none"
+                            onClick={() => onApprove(submission, finalPoints)}
+                        >
+                            <CheckCircle2 size={20} className="mr-2" />
+                            Aprovar ({finalPoints} XP)
+                        </Button>
+                    </>
+                ) : submission.status === 'approved' ? (
+                    <Button
+                        variant="outline"
+                        className="flex-1 md:flex-none border-warning text-warning hover:bg-yellow-50"
+                        onClick={() => onRevoke(submission)}
+                    >
+                        <X size={20} className="mr-2" />
+                        Revogar Pontuação
+                    </Button>
+                ) : (
+                    <div className="text-sm text-text-secondary italic">
+                        Rejeitado
+                    </div>
+                )}
             </div>
         </div>
     );

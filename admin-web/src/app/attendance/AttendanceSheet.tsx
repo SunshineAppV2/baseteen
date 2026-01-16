@@ -114,8 +114,10 @@ export default function AttendanceSheet({ date, baseId, onClose }: AttendanceShe
         loadData();
     }, [baseId, docId]);
 
+    const canEdit = !isLocked || ['coord_base', 'admin', 'master', 'secretaria', 'coord_geral'].includes(user?.role || '');
+
     const togglePresence = (userId: string) => {
-        if (isLocked) return;
+        if (!canEdit) return;
         setRecords(prev => {
             const userRec = prev[userId] || { present: false, items: {} };
             const newPresence = !userRec.present;
@@ -129,7 +131,7 @@ export default function AttendanceSheet({ date, baseId, onClose }: AttendanceShe
     };
 
     const toggleItem = (userId: string, itemId: string) => {
-        if (isLocked) return;
+        if (!canEdit) return;
         setRecords(prev => {
             const userRec = prev[userId] || { present: false, items: {} };
             const currentItems = userRec.items || {};
@@ -147,7 +149,7 @@ export default function AttendanceSheet({ date, baseId, onClose }: AttendanceShe
         });
     };
     const toggleColumn = (itemId: string) => {
-        if (isLocked) return;
+        if (!canEdit) return;
 
         setRecords(prev => {
             const next = { ...prev };
@@ -204,7 +206,7 @@ export default function AttendanceSheet({ date, baseId, onClose }: AttendanceShe
     };
 
     const handleSave = async () => {
-        if (isLocked) return;
+        if (!canEdit) return;
         setSaving(true);
         try {
             const { writeBatch, doc, increment, serverTimestamp, collection } = await import("firebase/firestore");

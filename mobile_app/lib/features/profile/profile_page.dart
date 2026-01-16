@@ -400,9 +400,9 @@ class ProfilePage extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    '+$amount',
-                                    style: const TextStyle(
-                                      color: AppColors.primary,
+                                    amount >= 0 ? '+$amount' : '$amount',
+                                    style: TextStyle(
+                                      color: amount >= 0 ? AppColors.primary : Colors.red,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
                                     ),

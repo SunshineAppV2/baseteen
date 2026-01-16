@@ -9,6 +9,8 @@ class TaskDetailPage extends StatefulWidget {
   final String description;
   final int xp;
   final String type;
+  final bool isBaseCollective;
+  final String? baseId;
 
   const TaskDetailPage({
     super.key,
@@ -17,6 +19,8 @@ class TaskDetailPage extends StatefulWidget {
     required this.description,
     required this.xp,
     required this.type,
+    this.isBaseCollective = false,
+    this.baseId,
   });
 
   @override
@@ -168,20 +172,37 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user?.uid).get();
       final userData = userDoc.data() ?? {};
       
-      await FirebaseFirestore.instance.collection('submissions').add({
+      final collectionName = widget.isBaseCollective ? 'base_submissions' : 'submissions';
+      final submissionId = widget.isBaseCollective 
+        ? '${widget.taskId}_${user?.uid}' // Simpler ID to avoid clashes
+        : '${widget.taskId}_${user?.uid}';
+      
+      final data = {
         'taskId': widget.taskId,
         'taskTitle': widget.title,
         'userId': user?.uid,
-        'userName': user?.displayName ?? 'Membro',
+        'userName': userData['displayName'] ?? user?.displayName ?? 'Membro',
         'status': 'pending',
         'xpReward': widget.xp,
         'baseId': userData['baseId'],
         'districtId': userData['districtId'],
+        'regionId': userData['regionId'],
+        'associationId': userData['associationId'],
+        'unionId': userData['unionId'],
         'proof': {
           'content': _contentController.text.trim().isEmpty ? 'Imagem Enviada' : _contentController.text.trim(),
           'submittedAt': FieldValue.serverTimestamp(),
         },
-      });
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (widget.isBaseCollective) {
+        data['baseName'] = userData['baseName'] ?? 'Minha Base';
+        data['submittedBy'] = user?.uid;
+        data['submittedByName'] = userData['displayName'] ?? user?.displayName;
+      }
+
+      await FirebaseFirestore.instance.collection(collectionName).doc(submissionId).set(data);
 
       if (mounted) {
         Navigator.pop(context);

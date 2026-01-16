@@ -12,6 +12,28 @@ service cloud.firestore {
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+
+    // Helper to get Base/District IDs with fallback to Firestore Data
+    // FORCE DB READ to avoid Stale Token issues
+    function getUserBaseId() {
+      return getUserData().baseId;
+    }
+    
+    function getUserDistrictId() {
+      return getUserData().districtId;
+    }
+
+    function getUserRegionId() {
+      return getUserData().regionId;
+    }
+
+    function getUserAssociationId() {
+      return getUserData().associationId;
+    }
+
+    function getUserUnionId() {
+      return getUserData().unionId;
+    }
     
     // Checks de Role
     // Checks de Role (Prioriza Custom Claims)
@@ -24,7 +46,7 @@ service cloud.firestore {
     
     function isOwnerOrAdmin() {
       // MASTER EMAIL HARDCODED: Case insensitive + fallback to roles
-      return (request.auth.token.email.lower() == 'master@baseteen.com') 
+      return (request.auth.token.email != null && request.auth.token.email.lower() == 'master@baseteen.com') 
              || request.auth.token.role == 'master'
              || request.auth.token.role == 'admin'
              || hasRole('master') 
@@ -37,6 +59,18 @@ service cloud.firestore {
     }
     
     // Hierarquia
+    function isUnionCoord() {
+      return request.auth.token.role == 'coord_uniao' || hasRole('coord_uniao');
+    }
+
+    function isAssociationCoord() {
+      return request.auth.token.role == 'coord_associacao' || hasRole('coord_associacao');
+    }
+
+    function isRegionCoord() {
+      return request.auth.token.role == 'coord_regiao' || hasRole('coord_regiao');
+    }
+
     function isDistrictCoord() {
       return request.auth.token.role == 'coord_distrital' || hasRole('coord_distrital');
     }
@@ -47,20 +81,13 @@ service cloud.firestore {
 
     // Acesso Hierárquico para Leitura/Escrita de Submissões e Usuários
     function canManageArea(docData) {
-      let targetBaseId = docData.baseId || docData.userBaseId;
-      let targetDistrictId = docData.districtId || docData.userDistrictId;
-      
+      // Prioritize checking the USER'S scope against the target document's scope
       return isOwnerOrAdmin() ||
-             // Check Claims First
-             (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == targetDistrictId) ||
-             (request.auth.token.role == 'coord_base' && request.auth.token.baseId == targetBaseId) ||
-             // Fallback to Doc Read
-             (
-                getUserData().role == 'coord_distrital' && getUserData().districtId == targetDistrictId
-             ) ||
-             (
-                getUserData().role == 'coord_base' && getUserData().baseId == targetBaseId
-             );
+             (isUnionCoord() && getUserUnionId() == docData.unionId) ||
+             (isAssociationCoord() && getUserAssociationId() == docData.associationId) ||
+             (isRegionCoord() && getUserRegionId() == docData.regionId) ||
+             (isDistrictCoord() && getUserDistrictId() == docData.districtId) ||
+             (isBaseCoord() && getUserBaseId() == docData.baseId);
     }
     
     // --- Regras por Coleção ---
@@ -69,17 +96,15 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwnerOrAdmin() || isSecretary() || 
                   request.auth.uid == userId ||
-                  (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId) ||
-                  (isBaseCoord() && resource.data.baseId == request.auth.token.baseId) ||
-                  (hasRole('membro') && resource.data.baseId == request.auth.token.baseId); // Members see their base peers
+                  resource.data.email == request.auth.token.email || // Allow query by own email
+                  canManageArea(resource.data) ||
+                  (hasRole('membro') && resource.data.baseId == getUserBaseId()) ||
+                  // Permite leitura pública de membros para o Play Quiz (Modo Simplificado)
+                  (resource.data.role == 'membro');
 
       // Criação: Admins ou Coordenadores (Hierarquia)
       allow create: if isOwnerOrAdmin() || isSecretary() || 
-                    // Coord Distrital: Can create Base Coords or Members in their district
-                    (isDistrictCoord() && request.resource.data.districtId == request.auth.token.districtId && 
-                      (request.resource.data.role == 'membro' || request.resource.data.role == 'coord_base')) ||
-                    // Coord Base: Can create Members in their base
-                    (isBaseCoord() && request.resource.data.baseId == request.auth.token.baseId && request.resource.data.role == 'membro') ||
+                    canManageArea(request.resource.data) ||
                     // Self-registration (if enabled/applicable logic)
                     (request.auth.uid == userId && 
                       (request.resource.data.role == 'membro' || request.auth.token.email == 'master@baseteen.com'));
@@ -94,9 +119,14 @@ service cloud.firestore {
                     canManageArea(resource.data) ||
                     // Allow Coordinators to update XP/Stats for any participant (e.g. Visitors)
                     ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
+                    // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
                     (request.auth.uid == userId && 
                       (request.resource.data.role == 'membro' || 
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking']) ||
+                       // Explicitly allow xp and stats updates (for quiz completion)
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp']) ||
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats']) ||
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats']) ||
                        request.auth.token.email == 'master@baseteen.com'));
 
       // Delete: Admin or Owner only
@@ -107,14 +137,20 @@ service cloud.firestore {
         // Strict Read: User themselves, or their managers.
         allow read: if request.auth.uid == userId || 
                     isOwnerOrAdmin() || isSecretary() ||
-                    (isDistrictCoord() && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
-                    (isBaseCoord() && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId);
+                    (isDistrictCoord() && getUserDistrictId() == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
+                    (isBaseCoord() && getUserBaseId() == get(/databases/$(database)/documents/users/$(userId)).data.baseId);
         
-        // Write: Managers or User (for own actions if needed)
-        allow write: if isOwnerOrAdmin() || isSecretary() ||
+        // Write: Managers or User (for own actions - quiz, task completion, etc)
+        allow create: if isOwnerOrAdmin() || isSecretary() ||
                       (request.auth.token.role == 'coord_base' && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
                       (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
-                      request.auth.uid == userId; 
+                      // Allow users to create their own XP history entries (quiz completion, etc)
+                      request.auth.uid == userId;
+        
+        // Update/Delete: Only managers
+        allow update, delete: if isOwnerOrAdmin() || isSecretary() ||
+                              (request.auth.token.role == 'coord_base' && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
+                              (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId);
       }
       
       // Subcoleção Reading Progress
@@ -124,15 +160,79 @@ service cloud.firestore {
       }
     }
 
-    // TASKS (Requisitos)
+    // TASKS (Requisitos) - Hierarchical Visibility
     match /tasks/{taskId} {
-      allow read: if isSignedIn();
-      allow create: if isOwnerOrAdmin() || isSecretary() ||
-                    (isDistrictCoord() && request.resource.data.districtId == getUserData().districtId) ||
-                    (isBaseCoord() && request.resource.data.baseId == getUserData().baseId);
-      allow update, delete: if isOwnerOrAdmin() || isSecretary() ||
-                            (isDistrictCoord() && resource.data.districtId == getUserData().districtId) ||
-                            (isBaseCoord() && resource.data.baseId == getUserData().baseId);
+      // Read permissions based on visibility scope
+      allow read: if isSignedIn() && (
+        // Global tasks visible to all
+        resource.data.visibilityScope == 'all' ||
+        
+        // Union tasks visible to users in that union
+        (resource.data.visibilityScope == 'union' && getUserData().unionId == resource.data.unionId) ||
+        
+        // Association tasks visible to users in that association
+        (resource.data.visibilityScope == 'association' && getUserData().associationId == resource.data.associationId) ||
+        
+        // Region tasks visible to users in that region
+        (resource.data.visibilityScope == 'region' && getUserData().regionId == resource.data.regionId) ||
+        
+        // District tasks visible to users in that district
+        (resource.data.visibilityScope == 'district' && getUserData().districtId == resource.data.districtId) ||
+        
+        // Base tasks visible to users in that base
+        (resource.data.visibilityScope == 'base' && getUserData().baseId == resource.data.baseId) ||
+        
+        // Backward compatibility: old tasks without visibilityScope
+        (!('visibilityScope' in resource.data) && (
+          !('baseId' in resource.data) && !('districtId' in resource.data) || // Old general tasks
+          resource.data.baseId == getUserData().baseId || // Old base tasks
+          resource.data.districtId == getUserData().districtId // Old district tasks
+        ))
+      );
+      
+      // Create permissions based on coordinator role and scope
+      allow create: if isSignedIn() && (
+        // Admins can create any task
+        isOwnerOrAdmin() || isSecretary() ||
+        
+        // Union coordinators can create union and global tasks
+        (isUnionCoord() && request.resource.data.visibilityScope in ['all', 'union'] && 
+         request.resource.data.unionId == getUserData().unionId) ||
+        
+        // Association coordinators can create association, region, district, and base tasks
+        (isAssociationCoord() && request.resource.data.visibilityScope in ['association', 'region', 'district', 'base'] && 
+         request.resource.data.associationId == getUserData().associationId) ||
+        
+        // Region coordinators can create region, district, and base tasks
+        (isRegionCoord() && request.resource.data.visibilityScope in ['region', 'district', 'base'] && 
+         request.resource.data.regionId == getUserData().regionId) ||
+        
+        // District coordinators can create district and base tasks
+        (isDistrictCoord() && request.resource.data.visibilityScope in ['district', 'base'] && 
+         request.resource.data.districtId == getUserData().districtId) ||
+        
+        // Base coordinators can create base tasks
+        (isBaseCoord() && request.resource.data.visibilityScope == 'base' && 
+         request.resource.data.baseId == getUserData().baseId)
+      );
+      
+      // Update/Delete permissions
+      allow update, delete: if isSignedIn() && (
+        isOwnerOrAdmin() || isSecretary() ||
+        
+        // Coordinators can edit tasks they created in their scope
+        (isUnionCoord() && resource.data.visibilityScope == 'union' && resource.data.unionId == getUserData().unionId) ||
+        (isAssociationCoord() && resource.data.visibilityScope == 'association' && resource.data.associationId == getUserData().associationId) ||
+        (isRegionCoord() && resource.data.visibilityScope == 'region' && resource.data.regionId == getUserData().regionId) ||
+        (isDistrictCoord() && resource.data.visibilityScope == 'district' && resource.data.districtId == getUserData().districtId) ||
+        (isBaseCoord() && resource.data.visibilityScope == 'base' && resource.data.baseId == getUserData().baseId) ||
+        
+        // Backward compatibility
+        (!('visibilityScope' in resource.data) && (
+          (isDistrictCoord() && resource.data.districtId == getUserData().districtId) ||
+          (isBaseCoord() && resource.data.baseId == getUserData().baseId)
+        ))
+      );
     }
 
     // SETTINGS (Gamification/Reading)
@@ -141,27 +241,35 @@ service cloud.firestore {
         allow write: if isOwnerOrAdmin();
     }
 
+    // --- NEW HIERARCHY ---
+    match /unions/{uId} {
+        allow read: if true;
+        allow write: if isOwnerOrAdmin();
+    }
+    match /associations/{aId} {
+        allow read: if true;
+        allow write: if isOwnerOrAdmin() || (isUnionCoord() && getUserUnionId() == resource.data.unionId);
+    }
+    match /regions/{rId} {
+        allow read: if true;
+        allow write: if isOwnerOrAdmin() || (isAssociationCoord() && getUserAssociationId() == resource.data.associationId);
+    }
+ 
     // DISTRICTS & BASES (Estrutura)
     match /districts/{dId} {
-        // District Coords can create districts (as requested) and read their own
-        allow read: if isOwnerOrAdmin() || isSecretary() ||
-                    (isSignedIn() && resource.id == request.auth.token.districtId);
-        allow create: if isOwnerOrAdmin() || isDistrictCoord(); 
-        allow write: if isOwnerOrAdmin(); // Update/Delete restricted
+        // All users can read districts (needed for registration filters)
+        allow read: if true;
+        allow create: if isOwnerOrAdmin() || canManageArea(request.resource.data); 
+        allow write: if isOwnerOrAdmin() || canManageArea(resource.data);
     }
     match /bases/{bId} {
-        // Bases restricted by hierarchy
-        allow read: if isOwnerOrAdmin() || isSecretary() ||
-                    (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId) ||
-                    (isBaseCoord() && resource.id == request.auth.token.baseId) ||
-                    (hasRole('membro') && resource.id == request.auth.token.baseId);
+        // All users can read bases (needed for registration filters)
+        allow read: if true;
         
         // District Coords can create Bases in their district
-        allow create: if isOwnerOrAdmin() || 
-                      (isDistrictCoord() && request.resource.data.districtId == request.auth.token.districtId);
+        allow create: if isOwnerOrAdmin() || canManageArea(request.resource.data);
         
-        allow write: if isOwnerOrAdmin() || 
-                     (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId);
+        allow write: if isOwnerOrAdmin() || canManageArea(resource.data);
     }
 
     // SUBMISSIONS (Provas)
@@ -176,12 +284,36 @@ service cloud.firestore {
                     
       allow update, delete: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
     }
+
+    // BASE SUBMISSIONS (Provas Coletivas de Bases)
+    match /base_submissions/{submissionId} {
+      // Leitura: Permitido para todos usuários logados para permitir cálculo de Ranking global
+      allow read: if isSignedIn();
+      
+      // Criação: Apenas Coord de Base (para sua própria base)
+      allow create: if isBaseCoord() && 
+                    request.resource.data.baseId == getUserBaseId() &&
+                    request.resource.data.submittedBy == request.auth.uid &&
+                    request.resource.data.status == 'pending';
+      
+      // Atualização: Admins, Secretaria, ou Coordenadores da hierarquia (para aprovar/reprovar)
+      allow update: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
+      
+      // Exclusão: Apenas Admins
+      allow delete: if isOwnerOrAdmin();
+    }
     
     // NOTIFICATIONS
     match /notifications/{notifId} {
         allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
         allow create: if isOwnerOrAdmin() || isSecretary() || canManageArea(get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data) || request.resource.data.userId == request.auth.uid;
         allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // NOTICES (Mural)
+    match /notices/{noticeId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin() || isSecretary() || hasRole('coord_geral');
     }
     
     // QUIZ QUESTIONS
@@ -221,30 +353,18 @@ service cloud.firestore {
     // Attendance Config (Pontuação por Base)
     match /bases/{baseId}/attendance_config/{configId} {
         allow read: if isSignedIn();
-        allow write: if isOwnerOrAdmin() || isSecretary() || (isBaseCoord() && getUserData().baseId == baseId);
+        allow write: if isOwnerOrAdmin() || isSecretary() || canManageArea(get(/databases/$(database)/documents/bases/$(baseId)).data);
     }
 
     // Attendance Records (A Chamada em si)
     match /attendance_days/{dayId} {
         allow read: if isSignedIn();
         
-        allow create: if isOwnerOrAdmin() || isSecretary() || 
-                      // Check token claims first (0 reads)
-                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == request.resource.data.baseId) ||
-                      // Fallback to DB read
-                      (isBaseCoord() && getUserData().baseId == request.resource.data.baseId);
+        allow create: if isOwnerOrAdmin() || isSecretary() || canManageArea(request.resource.data);
                       
-        allow update: if isOwnerOrAdmin() || isSecretary() || 
-                      // Check token claims first
-                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == resource.data.baseId) ||
-                      // Fallback to DB read
-                      (isBaseCoord() && resource.data.baseId == getUserData().baseId);
+        allow update: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
                       
-        allow delete: if isOwnerOrAdmin() || isSecretary() || 
-                      // Check token claims first
-                      (request.auth.token.role == 'coord_base' && request.auth.token.baseId == resource.data.baseId) ||
-                      // Fallback to DB read
-                      (isBaseCoord() && resource.data.baseId == getUserData().baseId);
+        allow delete: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
     }
 
     // Subscriptions Collection
@@ -262,10 +382,8 @@ service cloud.firestore {
     // Base Quizzes Collection
     match /base_quizzes/{quizId} {
       allow read: if isSignedIn();
-      allow create: if isOwnerOrAdmin() || isSecretary() || isBaseCoord() || isDistrictCoord();
-      allow update, delete: if isOwnerOrAdmin() || 
-                             (isBaseCoord() && resource.data.baseId == request.auth.token.baseId) ||
-                             (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId);
+      allow create: if isOwnerOrAdmin() || isSecretary() || canManageArea(request.resource.data);
+      allow update, delete: if isOwnerOrAdmin() || canManageArea(resource.data);
     }
 
     // Base Quiz Attempts
@@ -276,8 +394,7 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid || 
         isOwnerOrAdmin() || 
         isSecretary() ||
-        (isBaseCoord() && resource.data.baseId == request.auth.token.baseId) ||
-        (isDistrictCoord() && resource.data.districtId == request.auth.token.districtId)
+        canManageArea(resource.data)
       );
     }
   }
