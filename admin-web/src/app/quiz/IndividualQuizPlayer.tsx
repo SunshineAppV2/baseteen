@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { CheckCircle2, ArrowRight, X, Award, ChevronRight } from "lucide-react";
+import { CheckCircle2, ArrowRight, X, Award, ChevronRight, Gamepad } from "lucide-react";
 import { doc, updateDoc, increment, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { clsx } from "clsx";
@@ -111,25 +111,28 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
 
     if (finished) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-                <div className="bg-white rounded-3xl w-full max-w-md p-8 text-center scale-in-center shadow-2xl">
-                    <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg animate-bounce">
-                        <Award size={48} className="text-white" />
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0f172a]/90 backdrop-blur-xl animate-fade-in">
+                <div className="bg-white rounded-[40px] w-full max-w-md p-10 text-center scale-in-center shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-white/20">
+                    <div className="w-28 h-28 bg-gradient-to-tr from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_10px_30px_rgba(234,179,8,0.4)] animate-bounce">
+                        <Award size={64} className="text-white" />
                     </div>
-                    <h2 className="text-3xl font-black text-gray-900 mb-2">Incrível!</h2>
-                    <p className="text-gray-500 mb-8">Você arrasou nesse quiz.</p>
+                    <h2 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">PARABÉNS!</h2>
+                    <p className="text-gray-500 font-medium mb-10">Missão cumprida com sucesso.</p>
 
-                    <div className="bg-primary/5 rounded-3xl p-6 mb-8 border border-primary/10">
-                        <p className="text-xs font-bold text-primary uppercase tracking-widest mb-1">TOTAL GANHO</p>
-                        <p className="text-5xl font-black text-primary">{score} XP</p>
+                    <div className="bg-primary/10 rounded-[32px] p-8 mb-10 border-2 border-primary/10 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-primary/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
+                        <div className="relative z-10">
+                            <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-2 opacity-60">Sua Recompensa</p>
+                            <p className="text-6xl font-black text-primary tabular-nums">{score} XP</p>
+                        </div>
                     </div>
 
                     <Button
                         onClick={onClose}
-                        className="w-full py-6 rounded-2xl text-lg font-bold"
+                        className="w-full py-7 rounded-[24px] text-xl font-bold shadow-xl hover:scale-[1.02] transition-all bg-primary hover:bg-primary/90"
                         disabled={isSaving}
                     >
-                        {isSaving ? "Salvando..." : "Voltar à Lista"}
+                        {isSaving ? "PROCESSANDO..." : "CONCLUIR"}
                     </Button>
                 </div>
             </div>
@@ -137,47 +140,79 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 animate-fade-in overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-[#0f172a] font-sans selection:bg-primary/30 animate-fade-in overflow-hidden">
+            {/* Dynamic Background */}
+            <div className="absolute top-1/4 -left-20 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] animate-pulse" />
+            <div className="absolute bottom-1/4 -right-20 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[120px] animate-pulse delay-1000" />
+
             {/* Header */}
-            <div className="bg-white border-b border-gray-100 p-4 sticky top-0 z-10">
-                <div className="max-w-4xl mx-auto flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                            <Award size={20} />
+            <div className="bg-white/5 backdrop-blur-lg border-b border-white/10 p-5 shrink-0 z-20">
+                <div className="max-w-5xl mx-auto flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                        <div className="bg-white/10 p-3 rounded-2xl">
+                            <Gamepad className="text-white" size={24} />
                         </div>
                         <div>
-                            <h2 className="font-bold text-gray-900 leading-tight">{quiz.title}</h2>
-                            <p className="text-xs text-gray-500 font-medium">Questão {currentIdx + 1} de {questions.length}</p>
+                            <h2 className="text-lg font-black text-white leading-tight tracking-tight">{quiz.title}</h2>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-white/40 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-white/5 rounded-full border border-white/10">
+                                    Questão {currentIdx + 1} / {questions.length}
+                                </span>
+                            </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                        <X size={24} className="text-gray-400" />
-                    </button>
+
+                    <div className="flex items-center gap-6">
+                        <div className="text-right hidden sm:block">
+                            <p className="text-primary text-xl font-black tabular-nums leading-none">{score} XP</p>
+                            <p className="text-white/30 text-[10px] font-bold uppercase tracking-widest mt-1">Acumulados</p>
+                        </div>
+                        <button onClick={onClose} className="w-12 h-12 bg-white/5 hover:bg-red-500/20 text-white/50 hover:text-red-500 rounded-2xl flex items-center justify-center transition-all">
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
+            {/* Progress Bar */}
+            <div className="w-full h-1.5 bg-white/5 relative z-20 overflow-hidden">
+                <div
+                    className="h-full bg-gradient-to-r from-primary to-blue-400 transition-all duration-700 ease-out"
+                    style={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }}
+                />
+            </div>
+
             {/* Content */}
-            <div className="max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col justify-center py-12">
-                <div className="bg-white rounded-3xl p-8 md:p-12 shadow-xl shadow-slate-200/50 border border-slate-100 mb-8">
-                    <span className="inline-block px-3 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full mb-4 uppercase tracking-wider">
-                        Quiz Individual
-                    </span>
-                    <h1 className="text-3xl md:text-5xl font-black text-gray-900 mb-10 leading-tight">
+            <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col justify-center p-6 relative z-10 overflow-y-auto mt-4 pb-12">
+                <div className="bg-white/5 backdrop-blur-2xl rounded-[40px] p-8 md:p-14 shadow-2xl border border-white/10 relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-2 h-full bg-primary" />
+
+                    <div className="flex items-center justify-between mb-8">
+                        <span className="px-4 py-1.5 bg-primary/20 text-primary text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-primary/20">
+                            Fase Atual
+                        </span>
+                        <div className="flex items-center gap-2 text-white/30 font-black italic">
+                            <span className="text-white text-2xl font-black">{currentQuestion.xpValue || 100}</span>
+                            <span className="text-xs">XP EM JOGO</span>
+                        </div>
+                    </div>
+
+                    <h1 className="text-4xl md:text-6xl font-black text-white mb-14 leading-[1.1] tracking-tight drop-shadow-2xl">
                         {currentQuestion.statement}
                     </h1>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         {(currentQuestion.alternatives || []).map((alt: any, idx: number) => {
                             const isSelected = selectedAlt === idx;
                             const isCorrect = currentQuestion.correctAnswer === idx;
 
-                            let stateClass = "border-slate-100 hover:border-primary/30 hover:bg-slate-50";
+                            let stateClass = "border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/20 hover:scale-[1.01]";
                             if (answered) {
-                                if (isCorrect) stateClass = "border-green-500 bg-green-50 text-green-700 ring-2 ring-green-500/20";
-                                else if (isSelected) stateClass = "border-red-500 bg-red-50 text-red-700 ring-2 ring-red-500/20";
-                                else stateClass = "border-slate-100 opacity-50";
+                                if (isCorrect) stateClass = "border-green-500/50 bg-green-500/20 text-green-400 shadow-[0_0_30px_rgba(34,197,94,0.1)] scale-[1.02] z-10";
+                                else if (isSelected) stateClass = "border-red-500/50 bg-red-500/20 text-red-400 opacity-80 opacity-60";
+                                else stateClass = "border-white/5 opacity-30 grayscale-[0.5]";
                             } else if (isSelected) {
-                                stateClass = "border-primary bg-primary/5 ring-2 ring-primary/20";
+                                stateClass = "border-primary bg-primary/20 scale-[1.01] shadow-[0_0_30px_rgba(59,130,246,0.15)]";
                             }
 
                             return (
@@ -186,20 +221,25 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                                     onClick={() => handleSubmit(idx)}
                                     disabled={answered}
                                     className={clsx(
-                                        "flex items-center gap-4 p-5 rounded-2xl border-2 transition-all text-left group",
+                                        "flex items-center gap-6 p-7 rounded-[32px] border-2 transition-all text-left relative group",
                                         stateClass
                                     )}
                                 >
                                     <div className={clsx(
-                                        "w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 transition-colors",
-                                        isSelected ? "bg-primary text-white" : "bg-slate-100 text-slate-500 group-hover:bg-primary/10 group-hover:text-primary",
+                                        "w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl transition-all shadow-lg",
+                                        isSelected ? "bg-white text-primary" : "bg-white/10 text-white/50 group-hover:bg-primary group-hover:text-white",
                                         answered && isCorrect && "bg-green-500 text-white",
                                         answered && isSelected && !isCorrect && "bg-red-500 text-white"
                                     )}>
                                         {String.fromCharCode(65 + idx)}
                                     </div>
-                                    <span className="font-bold text-xl md:text-2xl">{alt.text || alt}</span>
-                                    {answered && isCorrect && <CheckCircle2 className="ml-auto text-green-500" size={24} />}
+                                    <span className="font-black text-2xl md:text-3xl tracking-tight leading-tight flex-1">{alt.text || alt}</span>
+
+                                    {answered && isCorrect && (
+                                        <div className="p-2 bg-green-500 rounded-full shadow-lg scale-in-center">
+                                            <CheckCircle2 className="text-white" size={24} />
+                                        </div>
+                                    )}
                                 </button>
                             );
                         })}
@@ -207,13 +247,13 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                 </div>
 
                 {answered && (
-                    <div className="flex justify-end animate-slide-up">
+                    <div className="flex justify-center mt-12 animate-slide-up">
                         <Button
                             onClick={handleNext}
-                            className="px-12 py-7 rounded-2xl text-xl font-black gap-3 shadow-xl hover:translate-x-1 transition-transform"
+                            className="px-16 py-8 rounded-[32px] text-2xl font-black gap-4 shadow-[0_20px_40px_rgba(59,130,246,0.3)] hover:scale-105 transition-all bg-white text-gray-900 hover:bg-gray-100"
                         >
-                            {currentIdx < questions.length - 1 ? "Próxima Questão" : "Ver Resultado"}
-                            <ChevronRight size={24} />
+                            {currentIdx < questions.length - 1 ? "PRÓXIMA FASE" : "VER COLETA"}
+                            <ArrowRight size={32} />
                         </Button>
                     </div>
                 )}

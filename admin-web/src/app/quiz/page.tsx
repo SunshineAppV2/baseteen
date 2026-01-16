@@ -28,7 +28,7 @@ import {
     FileSpreadsheet,
     ArrowRight,
     LayoutList,
-    Gamepad2,
+    Gamepad,
     MonitorPlay,
     QrCode,
     ChevronRight,
@@ -113,6 +113,8 @@ export default function QuizManagementPage() {
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [liveLeaderboard, setLiveLeaderboard] = useState<{ name: string, score: number }[]>([]);
     const [isEnding, setIsEnding] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(0);
+    const [totalParticipants, setTotalParticipants] = useState(0);
 
     // UI Control
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -211,20 +213,23 @@ export default function QuizManagementPage() {
             const allQuestionsAnswers = snapshot.val();
             const scores: Record<string, { score: number, name: string }> = {};
 
-            Object.values(allQuestionsAnswers).forEach((questionAnswers: any) => {
+            Object.entries(allQuestionsAnswers).forEach(([qId, questionAnswers]: [string, any]) => {
+                const questionObj = selectedQuiz?.questions.find(q => q.id === qId);
+                const xp = questionObj?.xpValue || 100;
+
                 Object.entries(questionAnswers).forEach(([userId, data]: [string, any]) => {
                     // Initialize if missing
                     if (!scores[userId]) scores[userId] = { score: 0, name: data.userName || "Anônimo" };
 
                     if (data.isCorrect) {
-                        scores[userId].score += (data.xpValue || 100);
+                        scores[userId].score += xp;
                     }
                 });
             });
 
             return Object.values(scores)
                 .sort((a, b) => b.score - a.score)
-                .slice(0, 5); // Top 5
+                .slice(0, 10); // Top 10
         } catch (e) {
             console.error(e);
             return [];
@@ -729,6 +734,57 @@ export default function QuizManagementPage() {
         return () => off(answersRef);
     }, [currentIdx, selectedQuiz, gamePin]);
 
+    // Monitor Participants Count
+    useEffect(() => {
+        if (!gamePin) return;
+        const participantsRef = ref(rtdb, `active_quizzes/${gamePin}/participants`);
+        const unsub = onValue(participantsRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                setTotalParticipants(Object.keys(data).length);
+            } else {
+                setTotalParticipants(0);
+            }
+        });
+        return () => off(participantsRef);
+    }, [gamePin]);
+
+    // Timer Logic
+    useEffect(() => {
+        let timer: any;
+        if (liveStatus === 'in_progress' && timeLeft > 0 && !isResultsVisible && !showLeaderboard) {
+            timer = setInterval(() => {
+                setTimeLeft(prev => prev - 1);
+            }, 1000);
+        } else if (timeLeft === 0 && liveStatus === 'in_progress' && !isResultsVisible && !showLeaderboard) {
+            toggleResults(true);
+        }
+
+        return () => clearInterval(timer);
+    }, [timeLeft, liveStatus, isResultsVisible, showLeaderboard]);
+
+    // Auto-advance if everyone answered
+    useEffect(() => {
+        if (liveStatus === 'in_progress' && !isResultsVisible && !showLeaderboard && totalAnswers > 0 && totalParticipants > 0 && totalAnswers >= totalParticipants) {
+            // Pequeno delay para não ser instantâneo demais
+            const t = setTimeout(() => {
+                toggleResults(true);
+            }, 500);
+            return () => clearTimeout(t);
+        }
+    }, [totalAnswers, totalParticipants, liveStatus, isResultsVisible, showLeaderboard]);
+
+    // Auto-toggle leaderboard after 5 seconds of results
+    useEffect(() => {
+        let t: any;
+        if (isResultsVisible && !showLeaderboard && liveStatus === 'in_progress') {
+            t = setTimeout(() => {
+                toggleLeaderboard();
+            }, 5000); // 5 seconds of "Result visibility" before leaderboard
+        }
+        return () => clearTimeout(t);
+    }, [isResultsVisible, showLeaderboard, liveStatus]);
+
     // Resiliência: Recuperar PIN ativo ao carregar/recarregar
     useEffect(() => {
         const recoverPin = async () => {
@@ -825,6 +881,7 @@ export default function QuizManagementPage() {
         setCurrentIdx(index);
         setIsResultsVisible(false);
         setShowLeaderboard(false);
+        setTimeLeft(question.timeLimit || 30);
     };
 
     const toggleResults = async (show: boolean) => {
@@ -835,13 +892,18 @@ export default function QuizManagementPage() {
 
     const toggleLeaderboard = async () => {
         const show = !showLeaderboard;
+        let leaders: any[] = [];
+
         if (show) {
-            const leaders = await calculateLiveLeaderboard();
+            leaders = await calculateLiveLeaderboard();
             setLiveLeaderboard(leaders);
         }
 
         const path = gamePin ? `active_quizzes/${gamePin}` : 'active_quizzes/main_event';
-        await update(ref(rtdb, path), { showLeaderboard: show });
+        await update(ref(rtdb, path), {
+            showLeaderboard: show,
+            leaderboard: leaders // Broadcast current leaders to participants
+        });
         setShowLeaderboard(show);
     };
 
@@ -1000,27 +1062,37 @@ export default function QuizManagementPage() {
                             <p className="text-text-secondary">Nenhum quiz disponível no momento.</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {memberQuizzes.map(quiz => (
-                                <div key={quiz.id} className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-xl transition-all group cursor-default">
-                                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
-                                        <Award size={24} />
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {memberQuizzes.map((quiz) => (
+                                <div
+                                    key={quiz.id}
+                                    className="group relative bg-white rounded-[32px] p-8 border border-gray-100 hover:shadow-[0_20px_50px_rgba(0,0,0,0.08)] transition-all duration-500 cursor-default overflow-hidden"
+                                >
+                                    {/* Background Accent */}
+                                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-primary/5 rounded-full group-hover:scale-150 transition-transform duration-700" />
+
+                                    <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl flex items-center justify-center text-primary mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                                        <Gamepad size={32} />
                                     </div>
-                                    <h3 className="font-bold text-lg mb-2">{quiz.title}</h3>
-                                    <p className="text-sm text-text-secondary line-clamp-2 mb-4">
-                                        {quiz.description || "Sem descrição disponível."}
-                                    </p>
-                                    <div className="flex items-center justify-between mt-6">
-                                        <div className="flex items-center gap-2 text-xs font-bold text-primary bg-primary/5 px-3 py-1 rounded-full">
-                                            <MessageSquare size={14} /> {quiz.questions.length} Perguntas
+
+                                    <div className="relative z-10">
+                                        <h3 className="font-black text-2xl mb-2 text-gray-900 tracking-tight group-hover:text-primary transition-colors">{quiz.title}</h3>
+                                        <p className="text-sm text-text-secondary line-clamp-2 mb-8 font-medium">
+                                            {quiz.description || "Inicie essa jornada agora e prove seu conhecimento!"}
+                                        </p>
+
+                                        <div className="flex items-center justify-between pt-6 border-t border-gray-50">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recompensa</span>
+                                                <span className="font-black text-primary italic">Até {quiz.questions.reduce((acc: number, q: any) => acc + (q.xpValue || 0), 0)} XP</span>
+                                            </div>
+                                            <Button
+                                                onClick={() => setPlayingIndividualQuiz(quiz)}
+                                                className="rounded-2xl px-6 py-5 font-black text-sm shadow-lg shadow-primary/20 hover:scale-105 transition-all"
+                                            >
+                                                JOGAR AGORA
+                                            </Button>
                                         </div>
-                                        <Button
-                                            variant="ghost"
-                                            className="text-primary font-bold gap-1 hover:bg-primary/5"
-                                            onClick={() => setPlayingIndividualQuiz(quiz)}
-                                        >
-                                            Começar <ArrowRight size={16} />
-                                        </Button>
                                     </div>
                                 </div>
                             ))}
@@ -1041,78 +1113,88 @@ export default function QuizManagementPage() {
 
     return (
         <div className="space-y-6 pb-20">
-            {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
-                        <Gamepad2 size={40} className="text-primary" />
-                        Arena Quiz
-                    </h1>
-                    <p className="text-text-secondary font-medium">Crie, gerencie e acompanhe o desempenho em tempo real.</p>
-                </div>
+            {/* Header with vibrant background */}
+            <div className="relative bg-[#0f172a] rounded-[40px] p-8 md:p-12 mb-10 overflow-hidden shadow-2xl">
+                {/* Decorative Elements */}
+                <div className="absolute top-0 right-0 w-96 h-96 bg-primary/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2" />
 
-                {user?.role === 'master' && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRepairDuplicates}
-                        className="text-[10px] text-gray-400 border-dashed hover:text-red-500 hover:border-red-500"
-                    >
-                        DEBUG: REPARAR PONTOS
-                    </Button>
-                )}
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+                    <div>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-3 bg-primary/20 rounded-2xl border border-primary/20 backdrop-blur-md">
+                                <Award className="text-primary" size={32} />
+                            </div>
+                            <span className="text-primary font-black text-xs uppercase tracking-[0.3em]">Módulo de Gamificação</span>
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-black text-white mb-2 tracking-tight">ÁREA QUIZ</h1>
+                        <p className="text-white/50 text-lg font-medium max-w-xl">
+                            Gerencie seus desafios, crie novas áreas e acompanhe o progresso dos seus alunos em tempo real.
+                        </p>
+                    </div>
 
-                <div className="flex gap-3">
-                    <Button
-                        variant="outline"
-                        onClick={handleStartTextImport}
-                        className="gap-2"
-                    >
-                        <FileText size={20} /> Importar Texto
-                    </Button>
-                    <Button
-                        onClick={handleCreateClick}
-                        className="bg-primary hover:bg-primary/90 text-white gap-2"
-                    >
-                        <Plus size={20} /> Novo Quiz
-                    </Button>
+                    <div className="flex flex-wrap gap-4">
+                        {user?.role === 'master' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleRepairDuplicates}
+                                className="text-[10px] bg-white/5 border-white/10 text-white/40 hover:text-red-400 hover:border-red-400/50 hover:bg-red-400/5"
+                            >
+                                REPARAR DADOS
+                            </Button>
+                        )}
+                        <Button
+                            variant="outline"
+                            onClick={handleStartTextImport}
+                            className="gap-3 bg-white/5 border-white/10 text-white hover:bg-white/10 h-14 px-8 rounded-2xl font-bold"
+                        >
+                            <FileText size={20} /> IMPORTAR TXT
+                        </Button>
+                        <Button
+                            onClick={handleCreateClick}
+                            className="bg-primary hover:bg-primary/90 text-white gap-3 h-14 px-8 rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-105 transition-all"
+                        >
+                            <Plus size={24} /> NOVO DESAFIO
+                        </Button>
+                    </div>
                 </div>
             </div>
 
-            {/* Navigation */}
-            <div className="flex gap-4 border-b border-gray-100">
+            {/* Navigation with modern tab style */}
+            <div className="flex gap-2 p-1 bg-gray-100/50 rounded-2xl mb-10 w-fit">
                 <button
                     onClick={() => setActiveTab("quizzes")}
                     className={clsx(
-                        "pb-4 px-2 font-bold text-sm transition-all flex items-center gap-2",
+                        "py-3 px-8 font-black text-sm rounded-xl transition-all flex items-center gap-3",
                         activeTab === "quizzes"
-                            ? "text-primary border-b-2 border-primary"
-                            : "text-text-secondary hover:text-text-primary"
+                            ? "bg-white text-primary shadow-sm"
+                            : "text-gray-500 hover:text-gray-900 hover:bg-gray-200/50"
                     )}
                 >
-                    <LayoutList size={18} /> Meus Quizzes
+                    <LayoutList size={20} /> MEUS DESAFIOS
                 </button>
                 <button
                     onClick={() => setActiveTab("arena")}
                     className={clsx(
-                        "pb-4 px-2 font-bold text-sm transition-all flex items-center gap-2",
+                        "py-3 px-8 font-black text-sm rounded-xl transition-all flex items-center gap-3",
                         activeTab === "arena"
-                            ? "text-primary border-b-2 border-primary"
-                            : "text-text-secondary hover:text-text-primary"
+                            ? "bg-white text-primary shadow-sm"
+                            : "text-gray-500 hover:text-gray-900 hover:bg-gray-200/50"
                     )}
                 >
-                    <MonitorPlay size={18} /> Play Quiz Ao Vivo
+                    <Gamepad size={20} /> ÁREA AO VIVO
                 </button>
                 <button
                     onClick={() => setActiveTab("history")}
                     className={clsx(
-                        "pb-4 px-2 font-bold text-sm transition-all flex items-center gap-2",
+                        "py-3 px-8 font-black text-sm rounded-xl transition-all flex items-center gap-3",
                         activeTab === "history"
-                            ? "text-primary border-b-2 border-primary"
-                            : "text-text-secondary hover:text-text-primary"
+                            ? "bg-white text-primary shadow-sm"
+                            : "text-gray-500 hover:text-gray-900 hover:bg-gray-200/50"
                     )}
                 >
-                    <History size={18} /> Histórico
+                    <History size={20} /> HISTÓRICO
                 </button>
             </div>
 
@@ -1136,69 +1218,31 @@ export default function QuizManagementPage() {
                             </div>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {myQuizzes.map(quiz => (
-                                <div key={quiz.id} className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between group">
-                                    <div>
-                                        <h3 className="font-bold text-lg mb-2">{quiz.title}</h3>
-                                        <p className="text-sm text-text-secondary line-clamp-2 mb-4">
-                                            {quiz.description || "Sem descrição"}
-                                        </p>
-                                        <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-text-secondary uppercase tracking-wider">
-                                            <span className="flex items-center gap-1">
-                                                <MessageSquare size={14} /> {quiz.questions.length} Q
-                                            </span>
-                                            <span className="flex items-center gap-1 text-primary">
-                                                <Award size={14} /> {quiz.questions.reduce((acc, q) => acc + (q.xpValue || 0), 0)} XP
-                                            </span>
-                                            <span className={clsx(
-                                                "px-2 py-0.5 rounded-full border",
-                                                quiz.classification === 'adolescente' ? "bg-indigo-100 text-indigo-700 border-indigo-200" :
-                                                    quiz.classification === 'pre-adolescente' ? "bg-teal-100 text-teal-700 border-teal-200" :
-                                                        "bg-gray-100 text-gray-700 border-gray-200"
-                                            )}>
-                                                {quiz.classification || 'todos'}
-                                            </span>
-                                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {myQuizzes.map((quiz) => (
+                                <div
+                                    key={quiz.id}
+                                    className="group bg-white rounded-[32px] p-8 border-2 border-transparent hover:border-primary/20 hover:shadow-[0_20px_50px_rgba(59,130,246,0.1)] transition-all duration-500 cursor-default"
+                                >
+                                    <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-6 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6">
+                                        <Gamepad size={32} />
                                     </div>
-                                    <div className="mt-6 flex flex-col gap-2">
+                                    <h3 className="font-black text-2xl mb-3 text-gray-900 tracking-tight">{quiz.title}</h3>
+                                    <p className="text-sm text-text-secondary line-clamp-2 mb-8 font-medium italic opacity-60">
+                                        {quiz.description || "Inicie a área agora e veja quem é o mais sábio!"}
+                                    </p>
+
+                                    <div className="flex flex-col gap-3">
                                         <Button
                                             onClick={() => handleSelectForArena(quiz)}
-                                            className="w-full gap-2 bg-primary/10 text-primary hover:bg-primary hover:text-white border-none"
+                                            className="w-full h-14 rounded-2xl bg-primary text-white font-black shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all gap-2"
                                         >
-                                            <Play size={18} /> Jogar na Área
+                                            INICIAR ÁREA <ArrowRight size={20} />
                                         </Button>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="flex-1"
-                                                onClick={() => handleEditClick(quiz)}
-                                            >
-                                                <Edit3 size={16} />
-                                            </Button>
-                                            {user?.role === 'master' && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="flex-1 text-primary hover:bg-primary/10"
-                                                    onClick={() => {
-                                                        setQuizToCopy(quiz);
-                                                        setIsCopyModalOpen(true);
-                                                    }}
-                                                    title="Copiar para Base"
-                                                >
-                                                    <Copy size={16} />
-                                                </Button>
-                                            )}
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="flex-1 text-error hover:bg-error/10 hover:border-error"
-                                                onClick={(e) => handleDeleteQuiz(quiz.id, e)}
-                                            >
-                                                <Trash2 size={16} />
-                                            </Button>
+                                        <div className="flex items-center justify-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest pt-2">
+                                            <span>{quiz.questions.length} Questões</span>
+                                            <div className="w-1 h-1 bg-gray-300 rounded-full" />
+                                            <span>Tempo: Auto</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1307,9 +1351,15 @@ export default function QuizManagementPage() {
                                                             <span className="bg-primary/10 text-primary font-bold px-3 py-1 rounded-full text-xs">
                                                                 Questão {currentIdx + 1}/{selectedQuiz.questions.length}
                                                             </span>
-                                                            <div className="text-right">
+                                                            <div className="text-right flex flex-col items-end">
                                                                 <div className="font-bold text-2xl text-primary">{selectedQuiz.questions[currentIdx].xpValue} XP</div>
-                                                                <div className="text-xs text-text-secondary">{selectedQuiz.questions[currentIdx].timeLimit}s</div>
+                                                                <div className={clsx(
+                                                                    "text-xl font-black px-3 py-1 rounded-lg",
+                                                                    timeLeft <= 5 ? "bg-red-100 text-red-600 animate-pulse" : "bg-gray-100 text-gray-700"
+                                                                )}>
+                                                                    <Clock size={18} className="inline mr-2" />
+                                                                    {timeLeft}s
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <h3 className="text-3xl md:text-5xl font-black mb-8">{selectedQuiz.questions[currentIdx].statement}</h3>
@@ -1353,10 +1403,19 @@ export default function QuizManagementPage() {
                                         {/* Sidebar Stats (Inline only) */}
                                         {!isFullScreen && (
                                             <div className="space-y-4">
-                                                <div className="bg-primary text-white p-6 rounded-2xl text-center">
-                                                    <UsersIcon size={32} className="mx-auto mb-2 opacity-80" />
-                                                    <div className="text-4xl font-black">{totalAnswers}</div>
-                                                    <div className="text-sm opacity-80 uppercase tracking-widest font-bold">Respostas</div>
+                                                <div className="bg-primary text-white p-6 rounded-2xl text-center space-y-4">
+                                                    <div>
+                                                        <UsersIcon size={32} className="mx-auto mb-2 opacity-80" />
+                                                        <div className="text-4xl font-black">{totalAnswers}{totalParticipants > 0 ? ` / ${totalParticipants}` : ""}</div>
+                                                        <div className="text-sm opacity-80 uppercase tracking-widest font-bold">Respostas</div>
+                                                    </div>
+
+                                                    {liveStatus === 'in_progress' && !isResultsVisible && (
+                                                        <div className="pt-4 border-t border-white/20">
+                                                            <div className="text-3xl font-black">{timeLeft}s</div>
+                                                            <div className="text-[10px] opacity-80 uppercase font-bold">Tempo Restante</div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <Button
                                                     onClick={() => setIsFullScreen(true)}
@@ -1371,57 +1430,80 @@ export default function QuizManagementPage() {
 
                                 {/* Full Screen Overlay */}
                                 {isFullScreen && (
-                                    <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col">
-                                        {/* Top Bar */}
-                                        <div className="bg-white p-4 shadow-md flex justify-between items-center shrink-0">
-                                            <div className="flex items-center gap-4">
-                                                <h2 className="text-xl font-bold">{selectedQuiz?.title}</h2>
-                                                <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">
-                                                    {currentIdx + 1}/{selectedQuiz?.questions.length}
-                                                </span>
+                                    <div className="fixed inset-0 z-50 bg-[#0f172a] flex flex-col font-sans selection:bg-primary/30">
+                                        {/* Top Bar with Glassmorphism */}
+                                        <div className="bg-white/10 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center shrink-0 z-20">
+                                            <div className="flex items-center gap-6">
+                                                <div className="bg-white/10 p-3 rounded-2xl">
+                                                    <Gamepad2 className="text-white" size={32} />
+                                                </div>
+                                                <div>
+                                                    <h2 className="text-2xl font-black text-white tracking-tight">{selectedQuiz?.title}</h2>
+                                                    <span className="text-white/50 text-xs font-bold uppercase tracking-widest">
+                                                        Arena de Combate • Questão {currentIdx + 1}/{selectedQuiz?.questions.length}
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-6">
-                                                <div className="text-center">
-                                                    <span className="block text-2xl font-black text-primary">{totalAnswers}</span>
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase">Respostas</span>
+                                                {liveStatus === 'in_progress' && !isResultsVisible && !showLeaderboard && (
+                                                    <div className={clsx(
+                                                        "px-6 py-3 rounded-2xl border-2 flex items-center gap-4 shadow-lg transition-all",
+                                                        timeLeft <= 5 ? "bg-red-500 border-white text-white animate-pulse scale-110" : "bg-white/10 border-white/20 text-white"
+                                                    )}>
+                                                        <Clock size={32} className={timeLeft <= 5 ? "animate-spin-slow" : ""} />
+                                                        <span className="text-4xl font-black tracking-tighter tabular-nums">{timeLeft}s</span>
+                                                    </div>
+                                                )}
+                                                <div className="text-center bg-white/10 px-6 py-3 rounded-2xl border border-white/20 backdrop-blur-sm">
+                                                    <span className="block text-2xl font-black text-white tabular-nums">{totalAnswers}{totalParticipants > 0 ? ` / ${totalParticipants}` : ""}</span>
+                                                    <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Respostas</span>
                                                 </div>
-                                                <Button variant="ghost" onClick={() => setIsFullScreen(false)}>
-                                                    <Minimize2 size={24} />
+                                                <Button variant="ghost" onClick={() => setIsFullScreen(false)} className="text-white hover:bg-white/10 rounded-2xl p-4 transition-all hover:rotate-90">
+                                                    <Minimize2 size={32} />
                                                 </Button>
                                             </div>
                                         </div>
 
-                                        {/* Main Content Area */}
-                                        <div className="flex-1 p-8 flex flex-col overflow-hidden">
-                                            <div className="flex-1 bg-white rounded-3xl shadow-lg border border-gray-200 overflow-hidden relative flex flex-col">
-                                                {/* Reuse same logic for Leaderboard/Question View */}
+                                        {/* Main Content Area with Animated Background */}
+                                        <div className="flex-1 p-8 flex flex-col overflow-hidden relative">
+                                            {/* Dynamic background blobs */}
+                                            <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/20 rounded-full blur-[120px] animate-pulse" />
+                                            <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-purple-500/20 rounded-full blur-[120px] animate-pulse delay-700" />
+
+                                            <div className="flex-1 bg-white/5 backdrop-blur-xl rounded-[40px] shadow-2xl border border-white/10 overflow-hidden relative flex flex-col z-10">
                                                 {showLeaderboard ? (
-                                                    <div className="flex-1 flex flex-col items-center justify-center p-12 bg-gray-50/50">
-                                                        <div className="text-center mb-8">
-                                                            <h3 className="text-4xl font-black text-primary uppercase tracking-widest mb-2">Ranking</h3>
-                                                            <div className="w-24 h-2 bg-yellow-400 mx-auto rounded-full" />
+                                                    <div className="flex-1 flex flex-col items-center justify-center p-12 overflow-y-auto">
+                                                        <div className="text-center mb-12">
+                                                            <div className="inline-block p-4 bg-yellow-400/20 rounded-3xl mb-4">
+                                                                <Award className="text-yellow-400" size={64} />
+                                                            </div>
+                                                            <h3 className="text-6xl font-black text-white uppercase tracking-[0.2em] mb-4">Hall da Fama</h3>
+                                                            <div className="w-48 h-2 bg-gradient-to-r from-transparent via-yellow-400 to-transparent mx-auto rounded-full" />
                                                         </div>
-                                                        <div className="space-y-4 w-full max-w-3xl">
+                                                        <div className="grid grid-cols-1 gap-4 w-full max-w-4xl">
                                                             {liveLeaderboard.map((player, idx) => (
                                                                 <div key={idx} className={clsx(
-                                                                    "flex items-center justify-between p-6 rounded-2xl border-2 transform transition-all",
-                                                                    idx === 0 ? "bg-yellow-50 border-yellow-400 scale-105 shadow-xl" :
-                                                                        idx === 1 ? "bg-gray-50 border-gray-300 scale-100 shadow-md" :
-                                                                            idx === 2 ? "bg-orange-50 border-orange-300 scale-100 shadow-sm" :
-                                                                                "bg-white border-gray-100"
+                                                                    "flex items-center justify-between p-6 rounded-3xl border-2 transform transition-all hover:scale-[1.02]",
+                                                                    idx === 0 ? "bg-gradient-to-r from-yellow-400 to-orange-500 border-yellow-200 text-white shadow-[0_0_50px_rgba(250,204,21,0.3)]" :
+                                                                        idx === 1 ? "bg-white/10 border-white/20 text-white" :
+                                                                            idx === 2 ? "bg-white/5 border-white/10 text-white" :
+                                                                                "bg-black/20 border-white/5 text-white/80"
                                                                 )}>
-                                                                    <div className="flex items-center gap-6">
+                                                                    <div className="flex items-center gap-8">
                                                                         <div className={clsx(
-                                                                            "w-12 h-12 rounded-full flex items-center justify-center font-black text-2xl text-white",
-                                                                            idx === 0 ? "bg-yellow-400" :
-                                                                                idx === 1 ? "bg-gray-400" :
-                                                                                    idx === 2 ? "bg-orange-400" : "bg-primary/20 text-primary"
+                                                                            "w-16 h-16 rounded-2xl flex items-center justify-center font-black text-3xl shadow-xl",
+                                                                            idx === 0 ? "bg-white text-yellow-600" :
+                                                                                idx === 1 ? "bg-gray-400/50 text-white" :
+                                                                                    idx === 2 ? "bg-orange-400/50 text-white" : "bg-white/5 text-white/50"
                                                                         )}>
                                                                             {idx + 1}
                                                                         </div>
-                                                                        <span className="font-bold text-3xl">{player.name}</span>
+                                                                        <span className="font-black text-4xl tracking-tight">{player.name}</span>
                                                                     </div>
-                                                                    <div className="font-black text-4xl text-primary">{player.score} XP</div>
+                                                                    <div className="text-right">
+                                                                        <div className="font-black text-5xl tabular-nums">{player.score}</div>
+                                                                        <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">XP TOTAL</div>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -1429,40 +1511,71 @@ export default function QuizManagementPage() {
                                                 ) : (
                                                     <div className="flex-1 flex flex-col">
                                                         {/* Question Text */}
-                                                        <div className="bg-white p-8 border-b flex items-center justify-center min-h-[200px]">
-                                                            <h3 className="text-4xl md:text-5xl font-black text-center leading-tight">
+                                                        <div className="flex-1 flex items-center justify-center p-12 text-center">
+                                                            <h3 className="text-6xl md:text-7xl font-black text-white leading-[1.1] tracking-tight drop-shadow-2xl">
                                                                 {selectedQuiz?.questions[currentIdx]?.statement}
                                                             </h3>
                                                         </div>
 
                                                         {/* Alternatives Grid */}
-                                                        <div className="flex-1 grid grid-cols-2 gap-4 p-8 bg-gray-50">
+                                                        <div className="grid grid-cols-2 gap-6 p-12 h-[450px]">
                                                             {selectedQuiz?.questions[currentIdx]?.alternatives.filter((alt: any) => alt.text?.trim()).map((alt, idx) => {
                                                                 const count = stats[idx] || 0;
                                                                 const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
+
+                                                                const colors = [
+                                                                    { bg: "bg-red-500", glow: "shadow-red-500/40", hover: "hover:bg-red-400", border: "border-red-400/30" },
+                                                                    { bg: "bg-blue-500", glow: "shadow-blue-500/40", hover: "hover:bg-blue-400", border: "border-blue-400/30" },
+                                                                    { bg: "bg-yellow-500", glow: "shadow-yellow-500/40", hover: "hover:bg-yellow-400", border: "border-yellow-400/30" },
+                                                                    { bg: "bg-green-500", glow: "shadow-green-500/40", hover: "hover:bg-green-400", border: "border-green-400/30" },
+                                                                ];
+                                                                const color = colors[idx % 4];
+
                                                                 return (
                                                                     <div key={idx} className={clsx(
-                                                                        "rounded-2xl border-4 relative overflow-hidden transition-all flex items-center px-8 shadow-sm",
-                                                                        (isResultsVisible && alt.isCorrect) ? "bg-green-50 border-green-500 shadow-green-200" : "bg-white border-gray-200"
-                                                                    )}>
+                                                                        "rounded-[32px] border-4 relative overflow-hidden transition-all flex items-center px-10 shadow-xl",
+                                                                        (isResultsVisible && alt.isCorrect) ? "border-white scale-[1.02] z-10" : "border-white/10",
+                                                                        !isResultsVisible && "hover:scale-[1.01]",
+                                                                        isResultsVisible && !alt.isCorrect && "opacity-40 grayscale-[0.5]"
+                                                                    )}
+                                                                        style={{ backgroundColor: isResultsVisible && alt.isCorrect ? undefined : 'rgba(255,255,255,0.05)' }}>
+
+                                                                        {/* The Actual Color Background if correct or active */}
+                                                                        {(isResultsVisible && alt.isCorrect) ? (
+                                                                            <div className={clsx("absolute inset-0 opacity-90", color.bg)} />
+                                                                        ) : (
+                                                                            <div className={clsx("absolute left-4 top-4 w-12 h-12 rounded-2xl opacity-80 flex items-center justify-center font-black text-2xl text-white", color.bg)}>
+                                                                                {["A", "B", "C", "D"][idx % 4]}
+                                                                            </div>
+                                                                        )}
+
                                                                         {isResultsVisible && (
                                                                             <div
-                                                                                className={clsx("absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-green-500" : "bg-gray-400")}
+                                                                                className={clsx("absolute left-0 top-0 bottom-0 opacity-40 transition-all duration-1000 ease-out", alt.isCorrect ? "bg-white" : color.bg)}
                                                                                 style={{ width: `${percentage}%` }}
                                                                             />
                                                                         )}
-                                                                        <div className="relative z-10 flex justify-between items-center w-full">
-                                                                            <div className="flex items-center gap-6">
-                                                                                <div className={clsx(
-                                                                                    "w-16 h-16 rounded-lg flex items-center justify-center text-4xl text-white font-black shadow-inner border-2 border-white/20",
-                                                                                    idx % 4 === 0 ? "bg-red-500" : idx % 4 === 1 ? "bg-blue-500" : idx % 4 === 2 ? "bg-yellow-500" : "bg-green-500"
-                                                                                )}>
-                                                                                    {["A", "B", "C", "D"][idx % 4]}
+
+                                                                        <div className="relative z-10 flex justify-between items-center w-full ml-16">
+                                                                            <span className={clsx(
+                                                                                "font-black text-4xl tracking-tight leading-tight",
+                                                                                (isResultsVisible && alt.isCorrect) ? "text-white" : "text-white/90"
+                                                                            )}>
+                                                                                {alt.text}
+                                                                            </span>
+                                                                            {isResultsVisible && (
+                                                                                <div className="flex flex-col items-end">
+                                                                                    <span className="font-black text-5xl text-white">{Math.round(percentage)}%</span>
+                                                                                    <span className="text-[10px] font-bold opacity-60">{count} votos</span>
                                                                                 </div>
-                                                                                <span className="font-bold text-3xl">{alt.text}</span>
-                                                                            </div>
-                                                                            {isResultsVisible && <span className="font-black text-4xl">{Math.round(percentage)}%</span>}
+                                                                            )}
                                                                         </div>
+
+                                                                        {isResultsVisible && alt.isCorrect && (
+                                                                            <div className="absolute right-6 top-6">
+                                                                                <CheckCircle2 className="text-white" size={48} />
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })}
@@ -1472,29 +1585,41 @@ export default function QuizManagementPage() {
                                             </div>
                                         </div>
 
-                                        {/* Bottom Control Bar */}
-                                        <div className="bg-white p-6 border-t border-gray-200 flex justify-center gap-4 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+                                        {/* Bottom Control Bar with Glowing Buttons */}
+                                        <div className="bg-white/10 backdrop-blur-md p-8 border-t border-white/10 flex justify-center gap-6 shrink-0 z-20">
                                             {!isResultsVisible ? (
-                                                <Button onClick={() => toggleResults(true)} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-primary text-white hover:bg-primary/90 shadow-xl hover:scale-105 transition-all">
-                                                    <CheckCircle2 size={32} /> Revelar Resposta
+                                                <Button
+                                                    onClick={() => toggleResults(true)}
+                                                    className="h-20 px-16 text-2xl gap-4 rounded-3xl bg-primary text-white hover:bg-primary/90 shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:scale-105 transition-all font-black"
+                                                >
+                                                    <CheckCircle2 size={40} /> REVELAR RESPOSTA
+                                                </Button>
+                                            ) : !showLeaderboard ? (
+                                                <Button
+                                                    onClick={toggleLeaderboard}
+                                                    className="h-20 px-16 text-2xl gap-4 rounded-3xl bg-yellow-400 text-yellow-950 hover:bg-yellow-300 shadow-[0_0_30px_rgba(250,204,21,0.3)] hover:scale-105 transition-all font-black uppercase tracking-tighter"
+                                                >
+                                                    <Award size={40} /> MOSTRAR RANKING
                                                 </Button>
                                             ) : (
-                                                <Button onClick={toggleLeaderboard} className="h-16 px-12 text-xl gap-3 rounded-2xl bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 hover:bg-yellow-300 shadow-xl hover:scale-105 transition-all">
-                                                    <Award size={32} /> {showLeaderboard ? "Ocultar Ranking" : "Ver Ranking"}
+                                                <Button
+                                                    onClick={() => broadcastQuestion(currentIdx + 1)}
+                                                    disabled={currentIdx >= (selectedQuiz?.questions.length || 0) - 1}
+                                                    className="h-20 px-16 text-2xl gap-4 rounded-3xl bg-white text-gray-900 hover:bg-gray-100 shadow-xl hover:scale-105 transition-all font-black disabled:opacity-50"
+                                                >
+                                                    {currentIdx >= (selectedQuiz?.questions.length || 0) - 1 ? "QUIZ ENCERRADO" : "PRÓXIMA PERGUNTA"} <ArrowRight size={40} />
                                                 </Button>
                                             )}
 
-                                            <Button
-                                                onClick={() => broadcastQuestion(currentIdx + 1)}
-                                                disabled={currentIdx >= (selectedQuiz?.questions.length || 0) - 1}
-                                                className="h-16 px-12 text-xl gap-3 rounded-2xl bg-gray-800 text-white hover:bg-black hover:scale-105 transition-all"
-                                            >
-                                                Próxima <ArrowRight size={32} />
-                                            </Button>
-
-                                            <Button variant="danger" onClick={endQuiz} className="h-16 px-8 rounded-2xl">
-                                                Encerrar
-                                            </Button>
+                                            <div className="border-l border-white/10 ml-6 pl-6 flex items-center">
+                                                <Button
+                                                    variant="ghost"
+                                                    onClick={endQuiz}
+                                                    className="h-16 px-8 rounded-2xl font-bold text-white/30 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                                                >
+                                                    Finalizar ÁREA
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}

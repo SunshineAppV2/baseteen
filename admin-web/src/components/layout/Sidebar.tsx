@@ -359,7 +359,7 @@ export default function Sidebar() {
                         {/* Support Section */}
                         <div className="px-4">
                             <button
-                                onClick={() => window.open('https://wa.me/5561999999999', '_blank')}
+                                onClick={() => window.open('https://wa.me/5591983292005', '_blank')}
                                 className="flex items-center gap-2 text-[11px] font-bold text-text-secondary hover:text-green-600 transition-colors uppercase tracking-wider"
                             >
                                 <HelpCircle size={14} />
