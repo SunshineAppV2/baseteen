@@ -13,6 +13,8 @@ interface Quarter {
     dates: any[]; // Timestamps
 }
 
+import { where, orderBy } from "firebase/firestore";
+
 import { Button } from "@/components/ui/Button";
 
 export default function AttendancePage() {

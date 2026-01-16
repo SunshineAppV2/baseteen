@@ -292,6 +292,18 @@ export default function QuizManagementPage() {
         setIsModalOpen(true);
     };
 
+    const handleStartTextImport = () => {
+        setEditingId(null);
+        setFormData({
+            title: "",
+            description: "",
+            availableToStudents: false,
+            classification: "todos",
+            questions: []
+        });
+        setIsTextImportOpen(true);
+    };
+
     const handleEditClick = (quiz: MasterQuiz) => {
         setEditingId(quiz.id);
         setFormData({
@@ -628,6 +640,7 @@ export default function QuizManagementPage() {
             alert(`${newQuestions.length} questões importadas! ${errorCount > 0 ? `(${errorCount} linhas ignoradas por erro)` : ""}`);
             setIsTextImportOpen(false);
             setTextImportValue("");
+            setIsModalOpen(true);
         } else {
             alert("Nenhuma questão válida encontrada. Verifique o formato!");
         }
@@ -1051,6 +1064,13 @@ export default function QuizManagementPage() {
 
                 <div className="flex gap-3">
                     <Button
+                        variant="outline"
+                        onClick={handleStartTextImport}
+                        className="gap-2"
+                    >
+                        <FileText size={20} /> Importar Texto
+                    </Button>
+                    <Button
                         onClick={handleCreateClick}
                         className="bg-primary hover:bg-primary/90 text-white gap-2"
                     >
@@ -1108,7 +1128,12 @@ export default function QuizManagementPage() {
                             <Gamepad2 size={48} className="mx-auto text-gray-300 mb-4" />
                             <h3 className="text-lg font-bold text-text-primary">Nenhum quiz criado</h3>
                             <p className="text-text-secondary mb-4">Crie seu primeiro quiz para jogar na área.</p>
-                            <Button onClick={handleCreateClick}>Criar Quiz</Button>
+                            <div className="flex gap-3 justify-center">
+                                <Button variant="outline" onClick={handleStartTextImport} className="gap-2">
+                                    <FileText size={20} /> Importar por Texto
+                                </Button>
+                                <Button onClick={handleCreateClick}>Criar Quiz</Button>
+                            </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

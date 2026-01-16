@@ -115,19 +115,17 @@ service cloud.firestore {
                     // Check token claims first (0 reads)
                     (request.auth.token.role == 'coord_base' && request.auth.token.baseId == resource.data.baseId) ||
                     (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == resource.data.districtId) ||
-                    // Fallback to expensive check
+                    // Fallback to DB check
+                    (isBaseCoord() && getUserBaseId() == resource.data.baseId) ||
+                    (isDistrictCoord() && getUserDistrictId() == resource.data.districtId) ||
                     canManageArea(resource.data) ||
                     // Allow Coordinators to update XP/Stats for any participant (e.g. Visitors)
                     ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
                     // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
                     (request.auth.uid == userId && 
-                      (request.resource.data.role == 'membro' || 
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking']) ||
-                       // Explicitly allow xp and stats updates (for quiz completion)
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp']) ||
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats']) ||
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats']) ||
-                       request.auth.token.email == 'master@baseteen.com'));
+                      (request.resource.data.role == resource.data.role && // Prevent self-role-change
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking', 'phoneNumber']) ||
+                        request.auth.token.email == 'master@baseteen.com')));
 
       // Delete: Admin or Owner only
       allow delete: if isOwnerOrAdmin();
@@ -144,13 +142,17 @@ service cloud.firestore {
         allow create: if isOwnerOrAdmin() || isSecretary() ||
                       (request.auth.token.role == 'coord_base' && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
                       (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
+                      (isBaseCoord() && getUserBaseId() == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
+                      (isDistrictCoord() && getUserDistrictId() == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
                       // Allow users to create their own XP history entries (quiz completion, etc)
                       request.auth.uid == userId;
         
         // Update/Delete: Only managers
         allow update, delete: if isOwnerOrAdmin() || isSecretary() ||
                               (request.auth.token.role == 'coord_base' && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
-                              (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId);
+                              (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
+                              (isBaseCoord() && getUserBaseId() == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
+                              (isDistrictCoord() && getUserDistrictId() == get(/databases/$(database)/documents/users/$(userId)).data.districtId);
       }
       
       // Subcoleção Reading Progress
@@ -269,7 +271,7 @@ service cloud.firestore {
         // District Coords can create Bases in their district
         allow create: if isOwnerOrAdmin() || canManageArea(request.resource.data);
         
-        allow write: if isOwnerOrAdmin() || canManageArea(resource.data);
+        allow write: if isOwnerOrAdmin() || canManageArea(resource.data) || (isBaseCoord() && bId == getUserBaseId());
     }
 
     // SUBMISSIONS (Provas)
@@ -353,7 +355,9 @@ service cloud.firestore {
     // Attendance Config (Pontuação por Base)
     match /bases/{baseId}/attendance_config/{configId} {
         allow read: if isSignedIn();
-        allow write: if isOwnerOrAdmin() || isSecretary() || canManageArea(get(/databases/$(database)/documents/bases/$(baseId)).data);
+        allow write: if isOwnerOrAdmin() || isSecretary() || 
+                      (isBaseCoord() && baseId == getUserBaseId()) ||
+                      canManageArea(get(/databases/$(database)/documents/bases/$(baseId)).data);
     }
 
     // Attendance Records (A Chamada em si)

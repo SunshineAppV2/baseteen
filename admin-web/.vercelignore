@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+mobile_app
+mobile
+web-admin
+dist
+build
