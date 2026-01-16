@@ -1207,7 +1207,7 @@ export default function QuizManagementPage() {
                         </div>
                     ) : myQuizzes.length === 0 ? (
                         <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
-                            <Gamepad2 size={48} className="mx-auto text-gray-300 mb-4" />
+                            <Gamepad size={48} className="mx-auto text-gray-300 mb-4" />
                             <h3 className="text-lg font-bold text-text-primary">Nenhum quiz criado</h3>
                             <p className="text-text-secondary mb-4">Crie seu primeiro quiz para jogar na área.</p>
                             <div className="flex gap-3 justify-center">
