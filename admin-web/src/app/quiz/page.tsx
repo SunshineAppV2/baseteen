@@ -1435,7 +1435,7 @@ export default function QuizManagementPage() {
                                         <div className="bg-white/10 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center shrink-0 z-20">
                                             <div className="flex items-center gap-6">
                                                 <div className="bg-white/10 p-3 rounded-2xl">
-                                                    <Gamepad2 className="text-white" size={32} />
+                                                    <Gamepad className="text-white" size={32} />
                                                 </div>
                                                 <div>
                                                     <h2 className="text-2xl font-black text-white tracking-tight">{selectedQuiz?.title}</h2>
