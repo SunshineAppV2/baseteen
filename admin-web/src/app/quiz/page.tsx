@@ -1042,7 +1042,7 @@ export default function QuizManagementPage() {
                             </Button>
                         </Link>
                     </div>
-                    <Gamepad2 size={200} className="absolute -right-10 -bottom-10 text-white/10 rotate-12" />
+                    <Gamepad size={200} className="absolute -right-10 -bottom-10 text-white/10 rotate-12" />
                 </div>
 
                 {/* List for Members */}
