@@ -1519,8 +1519,10 @@ export default function QuizManagementPage() {
 
                                                         {/* Alternatives Grid */}
                                                         <div className="grid grid-cols-2 gap-6 p-12 h-[450px]">
-                                                            {selectedQuiz?.questions[currentIdx]?.alternatives.filter((alt: any) => alt.text?.trim()).map((alt, idx) => {
-                                                                const count = stats[idx] || 0;
+                                                            {selectedQuiz?.questions[currentIdx]?.alternatives.map((alt, originalIdx) => {
+                                                                if (!alt.text?.trim()) return null;
+
+                                                                const count = stats[originalIdx] || 0;
                                                                 const percentage = totalAnswers > 0 ? (count / totalAnswers) * 100 : 0;
 
                                                                 const colors = [
@@ -1529,10 +1531,10 @@ export default function QuizManagementPage() {
                                                                     { bg: "bg-yellow-500", glow: "shadow-yellow-500/40", hover: "hover:bg-yellow-400", border: "border-yellow-400/30" },
                                                                     { bg: "bg-green-500", glow: "shadow-green-500/40", hover: "hover:bg-green-400", border: "border-green-400/30" },
                                                                 ];
-                                                                const color = colors[idx % 4];
+                                                                const color = colors[originalIdx % 4];
 
                                                                 return (
-                                                                    <div key={idx} className={clsx(
+                                                                    <div key={originalIdx} className={clsx(
                                                                         "rounded-[32px] border-4 relative overflow-hidden transition-all flex items-center px-10 shadow-xl",
                                                                         (isResultsVisible && alt.isCorrect) ? "border-white scale-[1.02] z-10" : "border-white/10",
                                                                         !isResultsVisible && "hover:scale-[1.01]",
@@ -1545,7 +1547,7 @@ export default function QuizManagementPage() {
                                                                             <div className={clsx("absolute inset-0 opacity-90", color.bg)} />
                                                                         ) : (
                                                                             <div className={clsx("absolute left-4 top-4 w-12 h-12 rounded-2xl opacity-80 flex items-center justify-center font-black text-2xl text-white", color.bg)}>
-                                                                                {["A", "B", "C", "D"][idx % 4]}
+                                                                                {["A", "B", "C", "D"][originalIdx]}
                                                                             </div>
                                                                         )}
 
