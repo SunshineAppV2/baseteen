@@ -53,6 +53,34 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                 {
                     question: "Como edito meu perfil?",
                     answer: "Clique no seu nome ou foto no topo da página. Você pode alterar foto, nome de exibição e outras informações pessoais."
+                },
+                {
+                    question: "Esqueci minha senha, como recupero?",
+                    answer: "Na tela de login, clique em 'Esqueci minha senha'. Digite seu email e você receberá um link para redefinir."
+                },
+                {
+                    question: "Posso mudar minha foto de perfil?",
+                    answer: "Sim! Clique no seu nome no topo, depois em 'Editar Perfil'. Clique na foto atual e selecione uma nova imagem do seu dispositivo."
+                },
+                {
+                    question: "O que significa cada nível?",
+                    answer: "Níveis mostram sua progressão: Nível 1-5 = Iniciante, 6-10 = Intermediário, 11-15 = Avançado, 16+ = Expert. Quanto maior o nível, mais reconhecimento você tem!"
+                },
+                {
+                    question: "Posso ver o perfil de outros membros?",
+                    answer: "Sim! No ranking ou na lista de membros, clique no nome de alguém para ver o perfil público com nível, XP e conquistas."
+                },
+                {
+                    question: "Como faço para sair do sistema?",
+                    answer: "Clique no seu nome no topo da página e selecione 'Sair'. Você será desconectado e redirecionado para a tela de login."
+                },
+                {
+                    question: "O sistema funciona no celular?",
+                    answer: "Sim! O sistema é totalmente responsivo e funciona perfeitamente em celulares, tablets e computadores."
+                },
+                {
+                    question: "Posso acessar de vários dispositivos?",
+                    answer: "Sim! Faça login com seu email e senha em qualquer dispositivo. Seus dados são sincronizados automaticamente."
                 }
             ],
             quickTips: [
@@ -98,6 +126,54 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                 {
                     question: "Posso importar tarefas de um arquivo?",
                     answer: "Sim! Use o botão 'Importar Excel' na página de Tarefas. Baixe o modelo, preencha e importe. Todas as tarefas serão criadas automaticamente."
+                },
+                {
+                    question: "Como removo um membro da minha base?",
+                    answer: "Em 'Membros', encontre a pessoa, clique nos 3 pontinhos e selecione 'Remover'. Confirme a ação. O membro perderá acesso à base."
+                },
+                {
+                    question: "Posso transferir um membro para outra base?",
+                    answer: "Apenas Masters podem transferir membros entre bases. Entre em contato com um Master se precisar fazer isso."
+                },
+                {
+                    question: "Como envio lembretes sobre tarefas?",
+                    answer: "Atualmente não há sistema automático de lembretes. Recomendamos usar grupos de WhatsApp ou avisos nas reuniões."
+                },
+                {
+                    question: "Posso ver estatísticas da minha base?",
+                    answer: "Sim! No dashboard você vê resumos. Para detalhes, acesse cada seção (Tarefas, Presença, Quiz) e use os filtros e relatórios."
+                },
+                {
+                    question: "Como corrijo uma presença marcada errada?",
+                    answer: "Vá em 'Presença', selecione a data no calendário, corrija as marcações e salve novamente. O histórico será atualizado."
+                },
+                {
+                    question: "Posso criar tarefas recorrentes (semanais)?",
+                    answer: "Use a função 'Duplicar' em uma tarefa existente. Ajuste a data e salve. Repita semanalmente ou use importação Excel para criar várias de uma vez."
+                },
+                {
+                    question: "Como exporto relatórios?",
+                    answer: "Em Presença e Tarefas, há botões 'Exportar para Excel'. Você pode filtrar por período e exportar os dados para análise."
+                },
+                {
+                    question: "Posso dar XP bônus manualmente?",
+                    answer: "Atualmente não há função para XP manual. O XP é gerado automaticamente por tarefas, presença e quizzes."
+                },
+                {
+                    question: "Como organizo uma competição de quiz?",
+                    answer: "Crie um quiz, inicie a Área ao Vivo, compartilhe o PIN e use tela cheia para projetar. O sistema mostra o placar automaticamente!"
+                },
+                {
+                    question: "Posso editar informações de um membro?",
+                    answer: "Sim! Em 'Membros', clique no nome da pessoa, depois em 'Editar'. Você pode alterar nome, email, classificação e outras informações."
+                },
+                {
+                    question: "Como resetar a senha de um membro?",
+                    answer: "Apenas Masters podem resetar senhas. Peça ao membro para usar 'Esqueci minha senha' na tela de login, ou contate um Master."
+                },
+                {
+                    question: "Posso copiar tarefas de outra base?",
+                    answer: "Apenas Masters podem copiar conteúdo entre bases. Se quiser usar tarefas de outra base, peça ao Master para copiá-las."
                 }
             ],
             quickTips: [
@@ -144,6 +220,50 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                 {
                     question: "Como vejo relatórios globais?",
                     answer: "No dashboard Master, role até a seção 'Relatórios'. Você pode filtrar por período, base específica e exportar para Excel."
+                },
+                {
+                    question: "Como promovo alguém a coordenador?",
+                    answer: "Em 'Membros', encontre a pessoa, clique em 'Editar', altere o campo 'Role' para 'Coordenador de Base' e salve."
+                },
+                {
+                    question: "Posso remover um coordenador?",
+                    answer: "Sim! Edite o membro e altere o role para 'Membro'. Ele perderá as permissões de coordenador mas continuará na base."
+                },
+                {
+                    question: "Como resetar a senha de qualquer usuário?",
+                    answer: "Em 'Membros', encontre a pessoa, clique nos 3 pontinhos e selecione 'Resetar Senha'. Uma nova senha temporária será enviada por email."
+                },
+                {
+                    question: "Posso deletar uma base inteira?",
+                    answer: "Sim, mas com CUIDADO! Em 'Bases', clique na base, depois em 'Deletar'. ATENÇÃO: Isso remove TODOS os dados da base permanentemente!"
+                },
+                {
+                    question: "Como copio tarefas entre bases?",
+                    answer: "Na página de Tarefas, selecione as tarefas desejadas, clique em 'Copiar para Base' e escolha a base destino. As tarefas serão duplicadas."
+                },
+                {
+                    question: "Posso ver logs de atividades?",
+                    answer: "Sim! Em 'Configurações' > 'Logs', você vê todas as ações importantes: logins, criações, edições, exclusões, com data, hora e usuário responsável."
+                },
+                {
+                    question: "Como faço backup dos dados?",
+                    answer: "Use 'Configurações' > 'Backup'. Você pode exportar todos os dados do sistema em formato Excel ou JSON para backup externo."
+                },
+                {
+                    question: "Posso desativar temporariamente uma base?",
+                    answer: "Sim! Em 'Bases', edite a base e marque 'Inativa'. A base ficará oculta mas os dados serão preservados. Reative quando quiser."
+                },
+                {
+                    question: "Como vejo quais bases estão mais ativas?",
+                    answer: "No dashboard Master, há um gráfico de atividade por base mostrando tarefas completadas, presença média e participação em quizzes."
+                },
+                {
+                    question: "Posso criar anúncios globais?",
+                    answer: "Sim! Em 'Configurações' > 'Anúncios', crie uma mensagem que aparecerá para todos os usuários no topo do dashboard."
+                },
+                {
+                    question: "Como gerencio permissões especiais?",
+                    answer: "Em 'Configurações' > 'Permissões', você define quem pode criar tarefas, quizzes, etc. Configure por role (Membro, Coordenador, Master)."
                 }
             ],
             quickTips: [
@@ -188,6 +308,30 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                 {
                     question: "Posso ver tarefas antigas que já completei?",
                     answer: "Sim! Na página de Tarefas, use o filtro 'Concluídas' para ver seu histórico completo de tarefas realizadas."
+                },
+                {
+                    question: "Por que algumas tarefas valem mais XP?",
+                    answer: "Tarefas mais complexas ou que exigem mais tempo valem mais XP. Leia a descrição para entender o nível de dificuldade."
+                },
+                {
+                    question: "Posso fazer tarefas de outra classificação?",
+                    answer: "Você só vê tarefas da sua classificação. Se quiser fazer tarefas diferentes, fale com seu coordenador."
+                },
+                {
+                    question: "Como sei quantas tarefas já completei?",
+                    answer: "No dashboard principal, você vê o total de tarefas completadas. Na página de Tarefas, use o filtro 'Concluídas' para ver a lista completa."
+                },
+                {
+                    question: "Ganho XP mesmo se completar atrasado?",
+                    answer: "Sim, mas pode ser um valor reduzido. Tarefas no prazo geralmente valem 100% do XP, enquanto atrasadas podem valer 50-75%."
+                },
+                {
+                    question: "Posso sugerir tarefas para o coordenador criar?",
+                    answer: "Sim! Fale com seu coordenador sobre ideias de tarefas. Eles podem criar baseado nas suas sugestões."
+                },
+                {
+                    question: "Como vejo o prazo de cada tarefa?",
+                    answer: "Na lista de tarefas, o prazo aparece abaixo do título. Tarefas com prazo próximo (menos de 3 dias) aparecem destacadas em vermelho."
                 }
             ],
             quickTips: [
