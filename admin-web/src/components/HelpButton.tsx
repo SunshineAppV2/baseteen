@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { HelpCircle, X, BookOpen, Video, FileText, Zap } from "lucide-react";
+import { HelpCircle, X, BookOpen, Video, FileText, Zap, MessageCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
+
+interface FAQ {
+    question: string;
+    answer: string;
+}
 
 interface HelpContent {
     title: string;
@@ -14,6 +19,7 @@ interface HelpContent {
         content: string;
         videoUrl?: string;
     }[];
+    faqs: FAQ[];
     quickTips: string[];
 }
 
@@ -33,6 +39,20 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     icon: Zap,
                     title: "Navegando pelo Dashboard",
                     content: "PASSO A PASSO:\n\n1. No topo, veja seu perfil com foto, nome e nível\n2. Logo abaixo, encontre seus números: XP total, tarefas completadas, posição no ranking\n3. Role para baixo para ver os cards de atalho\n4. Clique em qualquer card para ir direto para aquela funcionalidade\n5. Use o menu lateral esquerdo para navegar entre páginas"
+                }
+            ],
+            faqs: [
+                {
+                    question: "Como eu subo de nível?",
+                    answer: "Você sobe de nível acumulando XP através de tarefas completadas, presença nas reuniões e participação em quizzes. Cada 1000 XP = 1 nível."
+                },
+                {
+                    question: "Onde vejo meu ranking?",
+                    answer: "Seu ranking aparece no dashboard principal. Você também pode ver o ranking completo clicando em 'Ranking' no menu lateral."
+                },
+                {
+                    question: "Como edito meu perfil?",
+                    answer: "Clique no seu nome ou foto no topo da página. Você pode alterar foto, nome de exibição e outras informações pessoais."
                 }
             ],
             quickTips: [
@@ -60,6 +80,24 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     icon: FileText,
                     title: "Rotina Semanal Recomendada",
                     content: "SEGUNDA-FEIRA:\n• Crie tarefas da semana\n• Revise pendências\n\nQUARTA-FEIRA:\n• Acompanhe progresso das tarefas\n• Envie lembretes se necessário\n\nSÁBADO (DIA DA REUNIÃO):\n• Registre presença\n• Realize quiz ao vivo\n• Anote observações importantes\n\nDOMINGO:\n• Revise estatísticas da semana\n• Planeje próxima semana"
+                }
+            ],
+            faqs: [
+                {
+                    question: "Como adiciono novos membros?",
+                    answer: "Vá em 'Membros' > 'Novo Membro'. Preencha nome, email, classificação (pré-adolescente/adolescente) e salve. O membro receberá instruções de acesso por email."
+                },
+                {
+                    question: "Posso editar uma tarefa já criada?",
+                    answer: "Sim! Na lista de tarefas, clique no ícone de lápis ao lado da tarefa. Faça as alterações e salve. As mudanças serão refletidas imediatamente."
+                },
+                {
+                    question: "Como vejo quem completou cada tarefa?",
+                    answer: "Na página de Tarefas, clique na tarefa específica. Você verá uma lista de todos que completaram, com data e hora."
+                },
+                {
+                    question: "Posso importar tarefas de um arquivo?",
+                    answer: "Sim! Use o botão 'Importar Excel' na página de Tarefas. Baixe o modelo, preencha e importe. Todas as tarefas serão criadas automaticamente."
                 }
             ],
             quickTips: [
@@ -90,6 +128,24 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     content: "TODOS OS DIAS:\n☐ Verificar aprovações pendentes\n☐ Revisar atividade suspeita\n☐ Responder dúvidas de coordenadores\n\nTODA SEMANA:\n☐ Analisar estatísticas globais\n☐ Revisar bases com baixo engajamento\n☐ Atualizar conteúdos compartilhados\n\nTODO MÊS:\n☐ Gerar relatório mensal\n☐ Reunião com coordenadores\n☐ Planejar melhorias no sistema"
                 }
             ],
+            faqs: [
+                {
+                    question: "Como aprovo novos cadastros?",
+                    answer: "Vá em 'Aprovações' no menu. Revise os dados do solicitante, verifique se são legítimos e clique em 'Aprovar' ou 'Rejeitar'. Adicione observações se necessário."
+                },
+                {
+                    question: "Como crio uma nova base?",
+                    answer: "Acesse 'Bases' > 'Nova Base'. Defina nome, descrição, atribua um coordenador e salve. A base estará disponível imediatamente."
+                },
+                {
+                    question: "Posso transferir um membro entre bases?",
+                    answer: "Sim! Em 'Membros', encontre a pessoa, clique em 'Editar' e altere o campo 'Base'. Salve e a transferência será efetivada."
+                },
+                {
+                    question: "Como vejo relatórios globais?",
+                    answer: "No dashboard Master, role até a seção 'Relatórios'. Você pode filtrar por período, base específica e exportar para Excel."
+                }
+            ],
             quickTips: [
                 "Revise as aprovações pendentes diariamente",
                 "Monitore o desempenho de todas as bases semanalmente",
@@ -114,6 +170,24 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     icon: Zap,
                     title: "Como Completar uma Tarefa",
                     content: "PASSO A PASSO DETALHADO:\n\n1. ENCONTRE A TAREFA\n   • Vá em 'Tarefas' no menu\n   • Veja a lista de tarefas disponíveis\n   • Tarefas com prazo próximo aparecem primeiro\n\n2. LEIA COM ATENÇÃO\n   • Clique na tarefa para ver detalhes\n   • Leia toda a descrição\n   • Verifique o prazo\n   • Veja quantos XP você ganhará\n\n3. REALIZE A TAREFA\n   • Faça o que está sendo pedido\n   • Pode ser: ler um texto, fazer uma reflexão, praticar algo, etc.\n   • Não tenha pressa - qualidade é importante\n\n4. MARQUE COMO CONCLUÍDA\n   • Volte para a lista de tarefas\n   • Clique no botão 'Concluir' ou checkbox\n   • Confirme a conclusão\n   • Veja seu XP aumentar!\n\n5. ACOMPANHE SEU PROGRESSO\n   • No dashboard, veja quantas tarefas completou\n   • Observe seu XP subindo\n   • Comemore quando subir de nível!"
+                }
+            ],
+            faqs: [
+                {
+                    question: "O que acontece se eu perder o prazo?",
+                    answer: "Tarefas atrasadas ainda podem ser completadas, mas podem valer menos XP ou não contar para desafios especiais. Tente sempre completar no prazo!"
+                },
+                {
+                    question: "Posso desmarcar uma tarefa concluída?",
+                    answer: "Não. Uma vez marcada como concluída, a tarefa não pode ser desmarcada. Certifique-se de ter completado antes de marcar!"
+                },
+                {
+                    question: "Como sei se uma tarefa é para mim?",
+                    answer: "Veja a classificação da tarefa. Se você é pré-adolescente (10-13 anos), faça tarefas marcadas como 'Pré-adolescente'. Se é adolescente (14-17), faça as de 'Adolescente'."
+                },
+                {
+                    question: "Posso ver tarefas antigas que já completei?",
+                    answer: "Sim! Na página de Tarefas, use o filtro 'Concluídas' para ver seu histórico completo de tarefas realizadas."
                 }
             ],
             quickTips: [
@@ -144,6 +218,24 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     content: "AÇÕES DISPONÍVEIS:\n\n1. EDITAR TAREFA\n   • Clique no ícone de lápis\n   • Modifique o que precisar\n   • Salve as alterações\n\n2. DUPLICAR TAREFA\n   • Útil para tarefas recorrentes\n   • Clique em 'Duplicar'\n   • Ajuste a data e salve\n\n3. EXCLUIR TAREFA\n   • Clique no ícone de lixeira\n   • Confirme a exclusão\n   • ATENÇÃO: Não pode desfazer!\n\n4. VISUALIZAR CONCLUSÕES\n   • Veja quem completou cada tarefa\n   • Acompanhe o progresso\n   • Identifique quem está atrasado"
                 }
             ],
+            faqs: [
+                {
+                    question: "Posso criar tarefas diferentes para pré-adolescentes e adolescentes?",
+                    answer: "Sim! Ao criar a tarefa, selecione a classificação apropriada. Cada grupo verá apenas as tarefas destinadas a eles."
+                },
+                {
+                    question: "Como faço para uma tarefa valer mais XP?",
+                    answer: "Ao criar ou editar a tarefa, ajuste o campo 'Valor em XP'. Tarefas mais complexas devem valer mais (300-600 XP)."
+                },
+                {
+                    question: "Posso ocultar uma tarefa temporariamente?",
+                    answer: "Sim! Edite a tarefa e desmarque 'Disponível para alunos'. A tarefa ficará oculta até você reativá-la."
+                },
+                {
+                    question: "Como vejo o histórico de tarefas criadas?",
+                    answer: "Na página de Tarefas, use o filtro 'Todas' ou 'Arquivadas' para ver tarefas antigas. Você pode filtrar por data, status e classificação."
+                }
+            ],
             quickTips: [
                 "Crie tarefas semanais para manter engajamento constante",
                 "Varie os tipos: leitura, prática, reflexão, criatividade",
@@ -169,6 +261,20 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     icon: Zap,
                     title: "Como Funciona o Registro",
                     content: "O QUE ACONTECE:\n\n1. Você chega na reunião\n2. O coordenador marca sua presença no sistema\n3. Seu registro fica salvo com data e hora\n4. Você pode ver seu histórico de presença\n5. Ao final do mês, veja sua taxa de frequência"
+                }
+            ],
+            faqs: [
+                {
+                    question: "Ganho XP por comparecer?",
+                    answer: "Sim! Cada presença pode gerar XP bônus, especialmente se você mantiver uma sequência de presenças consecutivas."
+                },
+                {
+                    question: "E se eu chegar atrasado?",
+                    answer: "O coordenador pode marcar seu atraso. Você ainda ganha presença, mas pode valer menos XP que uma presença pontual."
+                },
+                {
+                    question: "Como vejo meu histórico de presença?",
+                    answer: "Na página de Presença, você verá um calendário com todas as suas presenças marcadas. Verde = presente, Vermelho = ausente."
                 }
             ],
             quickTips: [
@@ -199,6 +305,24 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                     content: "DICAS IMPORTANTES:\n\n• Registre LOGO APÓS a reunião (não deixe para depois)\n• Seja consistente - registre TODAS as reuniões\n• Use observações para eventos especiais\n• Acompanhe membros com muitas faltas\n• Entre em contato com quem está ausente frequentemente\n• Revise estatísticas mensalmente\n• Comemore melhorias na frequência"
                 }
             ],
+            faqs: [
+                {
+                    question: "Posso editar a presença de uma reunião passada?",
+                    answer: "Sim! Selecione a data no calendário, faça as alterações necessárias e salve novamente. O histórico será atualizado."
+                },
+                {
+                    question: "Como marco alguém como atrasado?",
+                    answer: "Ao marcar a presença, clique no ícone de relógio ao lado do nome. Você pode adicionar observações sobre o atraso."
+                },
+                {
+                    question: "Posso exportar o relatório de presença?",
+                    answer: "Sim! Use o botão 'Exportar para Excel' na página de Presença. Você pode filtrar por período e membro específico."
+                },
+                {
+                    question: "Como vejo quem tem mais faltas?",
+                    answer: "Na seção de Estatísticas, você verá a taxa de presença de cada membro ordenada. Os com menor porcentagem aparecem primeiro."
+                }
+            ],
             quickTips: [
                 "Registre a presença logo após cada reunião - não espere",
                 "Use observações para registrar eventos especiais",
@@ -218,18 +342,37 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                 {
                     icon: BookOpen,
                     title: "Como Jogar",
-                    content: "Escolha um quiz disponível e responda as questões. Cada resposta correta gera XP. Quanto mais rápido responder, mais pontos!"
+                    content: "PASSO A PASSO:\n\n1. ESCOLHA UM QUIZ\n   • Veja a lista de quizzes disponíveis\n   • Clique em 'Jogar'\n\n2. RESPONDA AS QUESTÕES\n   • Leia cada pergunta com atenção\n   • Escolha uma das 4 alternativas\n   • Clique para confirmar\n\n3. VEJA O RESULTADO\n   • Ao final, veja quantas acertou\n   • Ganhe XP pelas respostas corretas\n   • Quanto mais rápido, mais XP!"
                 },
                 {
                     icon: Zap,
                     title: "Área ao Vivo",
-                    content: "Participe de quizzes ao vivo com outros membros. Use o PIN fornecido pelo coordenador para entrar na sala."
+                    content: "COMO PARTICIPAR:\n\n1. PEGUE O PIN\n   • O coordenador fornecerá um PIN de 6 dígitos\n\n2. ENTRE NA SALA\n   • Clique em 'Entrar com PIN'\n   • Digite o PIN\n   • Selecione seu nome\n\n3. JOGUE AO VIVO\n   • Responda junto com outros participantes\n   • Veja o placar em tempo real\n   • Comemore sua vitória!"
+                }
+            ],
+            faqs: [
+                {
+                    question: "Posso jogar um quiz mais de uma vez?",
+                    answer: "Sim! Você pode repetir quizzes para melhorar sua pontuação, mas só ganhará XP na primeira vez."
+                },
+                {
+                    question: "Como funciona o tempo nas questões?",
+                    answer: "Cada questão tem um tempo limite (geralmente 30 segundos). Responda rápido para ganhar mais pontos!"
+                },
+                {
+                    question: "O que é o PIN da área ao vivo?",
+                    answer: "É um código de 6 dígitos que o coordenador gera para você entrar em um quiz ao vivo. Peça o PIN ao coordenador."
+                },
+                {
+                    question: "Como vejo meu histórico de quizzes?",
+                    answer: "Na página de Quiz, vá em 'Histórico'. Você verá todos os quizzes que já jogou com pontuações e datas."
                 }
             ],
             quickTips: [
                 "Leia as perguntas com atenção",
                 "Responda rápido para ganhar mais pontos",
-                "Pratique com quizzes individuais antes das áreas"
+                "Pratique com quizzes individuais antes das áreas",
+                "Participe das áreas ao vivo para competir com amigos"
             ]
         },
         coord_base: {
@@ -239,24 +382,47 @@ const helpContentMap: Record<string, Record<string, HelpContent>> = {
                 {
                     icon: BookOpen,
                     title: "Criando Quizzes",
-                    content: "1. Clique em 'Novo Desafio'\n2. Defina título e descrição\n3. Adicione questões (mínimo 4 alternativas)\n4. Configure tempo e XP por questão\n5. Salve e disponibilize"
+                    content: "PASSO A PASSO:\n\n1. ACESSE A CRIAÇÃO\n   • Clique em 'Novo Desafio'\n   • Preencha título e descrição\n\n2. ADICIONE QUESTÕES\n   • Clique em 'Nova Questão'\n   • Digite a pergunta\n   • Adicione 4 alternativas\n   • Marque a correta\n   • Defina tempo (10-60 segundos)\n   • Defina XP (50-200 por questão)\n\n3. CONFIGURE O QUIZ\n   • Escolha classificação\n   • Defina se é público ou privado\n   • Salve e disponibilize"
                 },
                 {
                     icon: FileText,
-                    title: "Importação Rápida",
-                    content: "Use 'Importar TXT' para criar quizzes rapidamente:\nFormato: Pergunta; A; B; C; D; Resposta; Tempo; XP"
+                    title: "Importação Rápida por TXT",
+                    content: "FORMATO DO ARQUIVO:\n\nPergunta; Alternativa A; Alternativa B; Alternativa C; Alternativa D; Resposta Correta (A/B/C/D); Tempo; XP\n\nEXEMPLO:\nQuem foi o primeiro rei de Israel?; Saul; Davi; Salomão; Samuel; A; 30; 100\n\nIMPORTANDO:\n1. Crie um arquivo .txt\n2. Uma pergunta por linha\n3. Clique em 'Importar TXT'\n4. Selecione o arquivo\n5. Todas as questões serão criadas!"
                 },
                 {
                     icon: Video,
-                    title: "Área ao Vivo",
-                    content: "1. Selecione um quiz\n2. Clique em 'Iniciar Área'\n3. Compartilhe o PIN com os participantes\n4. Use tela cheia para projetar\n5. O sistema avança automaticamente!"
+                    title: "Área ao Vivo - Passo a Passo",
+                    content: "COMO REALIZAR:\n\n1. SELECIONE O QUIZ\n   • Escolha um quiz criado\n   • Clique em 'Iniciar Área'\n\n2. COMPARTILHE O PIN\n   • Um PIN de 6 dígitos será gerado\n   • Mostre na tela ou fale para os participantes\n\n3. USE TELA CHEIA\n   • Clique no ícone de tela cheia\n   • Projete para todos verem\n\n4. DEIXE O SISTEMA TRABALHAR\n   • O timer conta automaticamente\n   • Quando todos responderem, avança sozinho\n   • Mostra resultados e placar automaticamente\n\n5. FINALIZE\n   • Ao terminar, clique em 'Finalizar Área'\n   • Veja o placar final\n   • Comemore os vencedores!"
+                }
+            ],
+            faqs: [
+                {
+                    question: "Quantas questões devo colocar em um quiz?",
+                    answer: "Recomendamos 10-15 questões para um quiz completo. Para áreas ao vivo, 5-10 questões funcionam bem (15-20 minutos)."
+                },
+                {
+                    question: "Posso editar um quiz depois de criado?",
+                    answer: "Sim! Clique no quiz e depois em 'Editar'. Você pode adicionar, remover ou modificar questões a qualquer momento."
+                },
+                {
+                    question: "Como funciona a tela cheia na área ao vivo?",
+                    answer: "Clique no ícone de tela cheia. O quiz ocupará toda a tela, perfeito para projetar. Pressione ESC para sair."
+                },
+                {
+                    question: "O sistema avança sozinho?",
+                    answer: "Sim! Quando o tempo acaba OU todos respondem, o sistema automaticamente mostra o resultado e depois o placar. Após 5 segundos, avança para a próxima questão."
+                },
+                {
+                    question: "Posso pausar uma área ao vivo?",
+                    answer: "Não há pausa, mas você pode clicar em 'Finalizar Área' a qualquer momento para encerrar."
                 }
             ],
             quickTips: [
                 "Teste o quiz antes de usar ao vivo",
                 "Use a tela cheia para projetar em reuniões",
                 "O sistema revela respostas automaticamente",
-                "Varie a dificuldade das questões"
+                "Varie a dificuldade das questões",
+                "Importe de TXT para criar quizzes rapidamente"
             ]
         }
     }
@@ -267,7 +433,6 @@ export default function HelpButton() {
     const { user } = useAuth();
     const pathname = usePathname();
 
-    // Determina o conteúdo de ajuda baseado na rota e role
     const getHelpContent = (): HelpContent => {
         const routeContent = helpContentMap[pathname] || helpContentMap["/"];
         const roleContent = routeContent[user?.role || "default"] || routeContent["default"];
@@ -275,6 +440,7 @@ export default function HelpButton() {
             title: "Ajuda",
             description: "Sistema de ajuda contextual",
             sections: [],
+            faqs: [],
             quickTips: []
         };
     };
@@ -283,7 +449,6 @@ export default function HelpButton() {
 
     return (
         <>
-            {/* Botão Flutuante */}
             <button
                 onClick={() => setIsOpen(true)}
                 className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-primary hover:bg-primary/90 text-white rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 group"
@@ -293,11 +458,9 @@ export default function HelpButton() {
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse" />
             </button>
 
-            {/* Modal de Ajuda */}
             {isOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl scale-in-center">
-                        {/* Header */}
+                    <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
                         <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-6 shrink-0">
                             <div className="flex justify-between items-start">
                                 <div>
@@ -316,9 +479,7 @@ export default function HelpButton() {
                             </div>
                         </div>
 
-                        {/* Content */}
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            {/* Sections */}
                             {content.sections.map((section, idx) => {
                                 const Icon = section.icon;
                                 return (
@@ -332,22 +493,29 @@ export default function HelpButton() {
                                                 <p className="text-gray-700 whitespace-pre-line leading-relaxed">
                                                     {section.content}
                                                 </p>
-                                                {section.videoUrl && (
-                                                    <a
-                                                        href={section.videoUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-2 mt-3 text-primary hover:text-primary/80 font-bold text-sm"
-                                                    >
-                                                        <Video size={16} />
-                                                        Assistir vídeo tutorial
-                                                    </a>
-                                                )}
                                             </div>
                                         </div>
                                     </div>
                                 );
                             })}
+
+                            {/* FAQs */}
+                            {content.faqs.length > 0 && (
+                                <div className="bg-blue-50 rounded-2xl p-6 border-2 border-blue-200">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <MessageCircle className="text-blue-600" size={24} />
+                                        <h3 className="font-black text-lg">Perguntas Frequentes (FAQ)</h3>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {content.faqs.map((faq, idx) => (
+                                            <div key={idx} className="bg-white rounded-xl p-4">
+                                                <h4 className="font-bold text-blue-900 mb-2">❓ {faq.question}</h4>
+                                                <p className="text-gray-700 text-sm">{faq.answer}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Quick Tips */}
                             {content.quickTips.length > 0 && (
@@ -367,28 +535,20 @@ export default function HelpButton() {
                                 </div>
                             )}
 
-                            {/* Suporte Adicional */}
-                            <div className="bg-primary/5 rounded-2xl p-6 border border-primary/20">
-                                <h3 className="font-bold text-lg mb-3">Precisa de mais ajuda?</h3>
+                            {/* Suporte */}
+                            <div className="bg-green-50 rounded-2xl p-6 border-2 border-green-200">
+                                <h3 className="font-bold text-lg mb-3">💬 Precisa de Ajuda Personalizada?</h3>
                                 <p className="text-gray-700 mb-4">
-                                    Entre em contato com o suporte ou seu coordenador para assistência personalizada.
+                                    Entre em contato via WhatsApp para suporte imediato!
                                 </p>
-                                <div className="flex flex-wrap gap-3">
-                                    <a
-                                        href="mailto:suporte@baseteen.com"
-                                        className="px-4 py-2 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 transition-colors"
-                                    >
-                                        📧 Enviar Email
-                                    </a>
-                                    <a
-                                        href="https://wa.me/5591983292005"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-4 py-2 bg-green-500 text-white rounded-xl font-bold text-sm hover:bg-green-600 transition-colors"
-                                    >
-                                        💬 WhatsApp
-                                    </a>
-                                </div>
+                                <a
+                                    href="https://wa.me/5591983292005"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 transition-colors"
+                                >
+                                    💬 Falar no WhatsApp
+                                </a>
                             </div>
                         </div>
                     </div>
