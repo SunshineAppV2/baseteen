@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AlertProvider } from "@/context/AlertContext";
 import AuthGuard from "@/components/layout/AuthGuard";
 import SplashScreen from "@/components/SplashScreen";
+import HelpButton from "@/components/HelpButton";
 import { useState, useEffect } from "react";
 import { Clock, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -112,6 +113,8 @@ function ContentWrapper({ children }: { children: React.ReactNode }) {
                 <main className="flex-1 overflow-y-auto px-8 py-8 h-screen">
                     {children}
                 </main>
+                {/* Help Button - only show on authenticated pages */}
+                <HelpButton />
             </div>
         </AuthGuard>
     );
