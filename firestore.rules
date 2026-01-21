@@ -122,9 +122,9 @@ service cloud.firestore {
                     // Allow Coordinators to update XP/Stats for any participant (e.g. Visitors)
                     ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
                     // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
-                    // Optimized Self-Update Rule: Allow users to update their own data,
-                    // provided they do NOT touch the 'role' field.
-                    (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])));
+                    // Optimized Self-Update Rule: Allow users to update their own data.
+                    // safely checking if 'role' is unchanged (using get() to avoid errors if field missing).
+                    (request.auth.uid == userId && request.resource.data.get('role', null) == resource.data.get('role', null)));
 
       // Delete: Admin or Owner only
       allow delete: if isOwnerOrAdmin();
