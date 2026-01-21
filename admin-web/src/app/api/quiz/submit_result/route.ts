@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminApps } from "firebase-admin/app";
+
 import { getAdminDb, getAdminAuth } from "@/services/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -14,13 +14,13 @@ export async function POST(req: NextRequest) {
         // 1. Verify Authentication (Assertive Security)
         const auth = getAdminAuth();
         const decodedToken = await auth.verifyIdToken(idToken);
-        
+
         if (decodedToken.uid !== userId) {
             return NextResponse.json({ error: "Unauthorized: User ID mismatch" }, { status: 403 });
         }
 
         if (score <= 0) {
-             return NextResponse.json({ message: "Score is 0, skipping save" }, { status: 200 });
+            return NextResponse.json({ message: "Score is 0, skipping save" }, { status: 200 });
         }
 
         // 2. Perform Database Operations with Admin Privileges
