@@ -122,9 +122,10 @@ service cloud.firestore {
                     // Allow Coordinators to update XP/Stats for any participant (e.g. Visitors)
                     ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
                     // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
-                    (request.auth.uid == userId && 
-                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking', 'phoneNumber']) ||
-                         request.auth.token.email == 'master@baseteen.com')));
+                    // Simplified Self-Update Rule: Allow users to update their own data, 
+                    // BUT explicitly prevent changing their own role (Privilege Escalation protection).
+                    // This allows XP, Stats, Profile, etc. updates without complex affectedKeys lists.
+                    (request.auth.uid == userId && request.resource.data.role == resource.data.role));
 
       // Delete: Admin or Owner only
       allow delete: if isOwnerOrAdmin();
