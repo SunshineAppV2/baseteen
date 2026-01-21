@@ -16,7 +16,8 @@ import {
     Trash2,
     Share2,
     Gamepad,
-    Link as LinkIcon
+    Link as LinkIcon,
+    X
 } from "lucide-react";
 import {
     collection,
