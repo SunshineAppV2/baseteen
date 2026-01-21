@@ -53,13 +53,15 @@ interface User {
     displayName: string;
     role: string;
     baseId: string;
-    baseName?: string; // Enhanced for manager view
+    baseName?: string;
 }
 
 interface Registration {
     id: string;
     userId: string;
     baseId: string;
+    userDisplayName?: string;
+    baseName?: string;
 }
 
 interface MasterQuiz {
@@ -90,8 +92,8 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
     // Manager State
     const [totalRegistrations, setTotalRegistrations] = useState(0);
+    const [registrationsByBase, setRegistrationsByBase] = useState<Record<string, Registration[]>>({});
     const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
-
     const [isSaving, setIsSaving] = useState(false);
 
     // Initial Load
@@ -125,11 +127,21 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                 }
 
                 if (isManager) {
-                    // Manager: Load Total Counts
+                    // Manager: Load All Registrations
                     const regsRef = collection(db, "event_registrations");
                     const qAll = query(regsRef, where("eventId", "==", eventId));
                     const snapAll = await getDocs(qAll);
                     setTotalRegistrations(snapAll.size);
+
+                    // Group by Base
+                    const grouped: Record<string, Registration[]> = {};
+                    snapAll.docs.forEach(doc => {
+                        const data = doc.data() as Omit<Registration, 'id'>;
+                        const bName = data.baseName || `Base ${data.baseId?.substring(0, 5)}...`;
+                        if (!grouped[bName]) grouped[bName] = [];
+                        grouped[bName].push({ ...data, id: doc.id });
+                    });
+                    setRegistrationsByBase(grouped);
                 }
 
             } catch (err) {
@@ -163,14 +175,20 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             // Add new
             Array.from(selectedUsers).forEach(userId => {
                 if (!currentRegIds.has(userId)) {
+                    const memberInfo = baseMembers.find(m => m.id === userId);
                     const newDocRef = doc(regsRef);
                     batch.set(newDocRef, {
                         eventId,
                         userId,
-                        baseId: user.baseId,
+                        baseId: user.baseId!, // Assert non-null because of check at top
                         registeredBy: user.uid,
                         createdAt: serverTimestamp(),
-                        status: 'registered'
+                        status: 'registered',
+                        userDisplayName: memberInfo?.displayName || "Membro",
+                        // Note: user.baseName might not be in the user context strictly, 
+                        // but we can try to get it. For now, let's use a placeholder or check if user object has it.
+                        // Ideally we should have fetched the base details, but for now:
+                        baseName: (user as any).baseName || "Base " + user.baseId!.substring(0, 5)
                     });
                 }
             });
@@ -353,50 +371,87 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
             {/* MANAGER VIEW */}
             {isManager && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Stats */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-                        <div>
-                            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Inscritos Totais</p>
-                            <p className="text-4xl font-black text-gray-900">{totalRegistrations}</p>
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Stats */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Inscritos Totais</p>
+                                <p className="text-4xl font-black text-gray-900">{totalRegistrations}</p>
+                            </div>
+                            <div className="bg-blue-50 p-3 rounded-xl text-primary">
+                                <Users size={24} />
+                            </div>
                         </div>
-                        <div className="bg-blue-50 p-3 rounded-xl text-primary">
-                            <Users size={24} />
+
+                        {/* Linked Quizzes */}
+                        <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                <div className="flex items-center gap-2">
+                                    <Gamepad size={20} className="text-gray-500" />
+                                    <h3 className="font-bold text-lg text-gray-900">Quizzes do Evento</h3>
+                                </div>
+                                <Button size="sm" onClick={() => setIsQuizModalOpen(true)} className="gap-2">
+                                    <Plus size={16} /> Vincular Quiz
+                                </Button>
+                            </div>
+
+                            <div className="p-6">
+                                {linkedQuizzesList.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {linkedQuizzesList.map(q => (
+                                            <div key={q.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="bg-green-100 text-green-700 p-2 rounded-lg font-bold text-xs uppercase">Game</div>
+                                                    <span className="font-bold text-gray-800">{q.title}</span>
+                                                    <span className="text-xs text-gray-400">({q.questions?.length || 0} questões)</span>
+                                                </div>
+                                                <Button variant="ghost" size="sm" onClick={() => handleUnlinkQuiz(q.id)} className="text-gray-400 hover:text-red-500">
+                                                    <Trash2 size={16} />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
+                                        <LinkIcon size={32} className="mx-auto mb-2 opacity-50" />
+                                        <p>Nenhum quiz vinculado a este evento.</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    {/* Linked Quizzes */}
-                    <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                            <div className="flex items-center gap-2">
-                                <Gamepad size={20} className="text-gray-500" />
-                                <h3 className="font-bold text-lg text-gray-900">Quizzes do Evento</h3>
-                            </div>
-                            <Button size="sm" onClick={() => setIsQuizModalOpen(true)} className="gap-2">
-                                <Plus size={16} /> Vincular Quiz
-                            </Button>
+                    {/* Registrations List (Grouped by Base) */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-6 border-b border-gray-100 bg-gray-50">
+                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                <Users size={20} /> Relatório de Inscrições
+                            </h3>
                         </div>
-
                         <div className="p-6">
-                            {linkedQuizzesList.length > 0 ? (
-                                <div className="space-y-3">
-                                    {linkedQuizzesList.map(q => (
-                                        <div key={q.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-green-100 text-green-700 p-2 rounded-lg font-bold text-xs uppercase">Game</div>
-                                                <span className="font-bold text-gray-800">{q.title}</span>
-                                                <span className="text-xs text-gray-400">({q.questions?.length || 0} questões)</span>
+                            {Object.keys(registrationsByBase).length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {Object.entries(registrationsByBase).map(([baseName, regs]) => (
+                                        <div key={baseName} className="border border-gray-200 rounded-xl overflow-hidden">
+                                            <div className="bg-gray-50 p-3 border-b border-gray-200 flex justify-between items-center">
+                                                <span className="font-bold text-sm text-gray-700 truncate max-w-[70%]">{baseName}</span>
+                                                <span className="bg-primary/10 text-primary text-xs font-black px-2 py-1 rounded-full">{regs.length}</span>
                                             </div>
-                                            <Button variant="ghost" size="sm" onClick={() => handleUnlinkQuiz(q.id)} className="text-gray-400 hover:text-red-500">
-                                                <Trash2 size={16} />
-                                            </Button>
+                                            <div className="max-h-48 overflow-y-auto p-2 bg-white space-y-1">
+                                                {regs.map(r => (
+                                                    <div key={r.userId} className="text-xs text-gray-600 px-2 py-1.5 hover:bg-gray-50 rounded flex items-center gap-2">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                                                        {r.userDisplayName || `Usuário...`}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
-                                    <LinkIcon size={32} className="mx-auto mb-2 opacity-50" />
-                                    <p>Nenhum quiz vinculado a este evento.</p>
+                                <div className="text-center py-8 text-gray-400">
+                                    <p>Nenhuma inscrição realizada ainda.</p>
                                 </div>
                             )}
                         </div>
