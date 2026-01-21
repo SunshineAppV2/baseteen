@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { CheckCircle2, ArrowRight, X, Award, ChevronRight, Gamepad } from "lucide-react";
-import { doc, updateDoc, increment, addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "@/services/firebase";
+import { db, auth } from "@/services/firebase";
 import { clsx } from "clsx";
 
 interface IndividualQuizPlayerProps {
@@ -89,31 +88,36 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
 
         if (score > 0) {
             try {
-                console.log('[QUIZ DEBUG] Step 1: Saving XP to Users collection...');
-                const userRef = doc(db, "users", userId);
-                await updateDoc(userRef, {
-                    xp: increment(score),
-                    "stats.currentXp": increment(score)
-                });
-                console.log('[QUIZ DEBUG] Step 1 Success: XP updated');
+                console.log('[QUIZ DEBUG] Step 1: Getting Auth Token...');
+                const token = await auth.currentUser?.getIdToken();
+                if (!token) {
+                    throw new Error("Não foi possível autenticar o usuário. Tente fazer login novamente.");
+                }
 
-                console.log('[QUIZ DEBUG] Step 2: Creating History Entry...');
-                await addDoc(collection(db, "users", userId, "xp_history"), {
-                    amount: score,
-                    type: 'quiz',
-                    taskTitle: `Quiz: ${quiz.title}`,
-                    createdAt: serverTimestamp(),
-                    reason: `Participação Individual no Quiz: ${quiz.title}`
+                console.log('[QUIZ DEBUG] Step 2: Submitting to Secure API...');
+                const response = await fetch('/api/quiz/submit_result', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId,
+                        score,
+                        quizTitle: quiz.title,
+                        idToken: token
+                    })
                 });
-                console.log('[QUIZ DEBUG] Step 2 Success: History entry created');
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "Erro ao salvar pontuação no servidor.");
+                }
+
+                console.log('[QUIZ DEBUG] Success: XP updated via API');
+
             } catch (err: any) {
                 console.error("[QUIZ DEBUG] Error saving individual quiz result:", err);
-                // Detalhar o erro se possível
-                if (err.code === 'permission-denied') {
-                    alert(`Erro de Permissão: Não foi possível salvar seus pontos. Verifique se você está logado corretamente.`);
-                } else {
-                    alert(`Erro ao salvar pontuação: ${err.message || err}`);
-                }
+                alert(`Erro ao salvar pontuação: ${err.message || err}`);
             }
         } else {
             console.warn('[QUIZ DEBUG] Score is 0, skipping XP save');
