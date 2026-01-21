@@ -400,5 +400,17 @@ service cloud.firestore {
         canManageArea(resource.data)
       );
     }
+
+    // EVENTS (Eventos Oficiais)
+    match /events/{eventId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin() || hasRole('coord_geral');
+    }
+
+    // EVENT REGISTRATIONS (Inscrições)
+    match /event_registrations/{registrationId} {
+        allow read: if isSignedIn();
+        allow write: if isOwnerOrAdmin() || hasRole('coord_geral') || isBaseCoord(); 
+    }
   }
 }

@@ -121,6 +121,25 @@ export default function QuizManagementPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [playingIndividualQuiz, setPlayingIndividualQuiz] = useState<MasterQuiz | null>(null);
 
+    // --- Event Logic Integration ---
+    const { data: activeEvents } = useCollection<any>("events", [where("status", "==", "active")]);
+    const { data: myRegistrations } = useCollection<any>("event_registrations", [where("userId", "==", user?.uid || "guest")]);
+
+    // Compute Event Quizzes
+    const eventQuizzesMap = new Map<string, MasterQuiz>();
+    if (activeEvents.length > 0 && myRegistrations.length > 0 && myQuizzes.length > 0) {
+        activeEvents.forEach(ev => {
+            // Check if user is registered for this event
+            if (myRegistrations.some(r => r.eventId === ev.id)) {
+                ev.linkedQuizzes?.forEach((quizId: string) => {
+                    const foundQuiz = myQuizzes.find(q => q.id === quizId);
+                    if (foundQuiz) eventQuizzesMap.set(quizId, foundQuiz);
+                });
+            }
+        });
+    }
+    const eventQuizzes = Array.from(eventQuizzesMap.values());
+
     const handleRepairDuplicates = async () => {
         if (!confirm("Deseja remover a duplicidade de pontos para Sophia, Antony e Talita (Quiz Lição 2)?")) return;
 
@@ -1201,6 +1220,44 @@ export default function QuizManagementPage() {
             {/* Content Tab: Quizzes (List) */}
             {activeTab === "quizzes" && (
                 <div className="space-y-6">
+                    {/* Event Quizzes Section */}
+                    {eventQuizzes.length > 0 && (
+                        <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-[32px] p-8 text-white mb-8 shadow-2xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2 group-hover:scale-110 transition-transform duration-700" />
+                            <div className="relative z-10">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+                                        <Award className="text-white" size={32} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-2xl font-black uppercase italic tracking-widest text-white">Desafios Especiais</h2>
+                                        <p className="text-orange-100 text-sm font-medium">Eventos exclusivos que você está inscrito!</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {eventQuizzes.map(quiz => (
+                                        <div key={quiz.id} className="bg-black/20 backdrop-blur-md rounded-2xl p-5 border border-white/10 hover:bg-white/10 transition-all flex flex-col justify-between group/card">
+                                            <div className="mb-4">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="bg-white/20 text-white text-[10px] uppercase font-bold px-2 py-1 rounded-lg tracking-wider">Evento Oficial</span>
+                                                    <Gamepad size={20} className="text-white/50 group-hover/card:text-white transition-colors" />
+                                                </div>
+                                                <p className="font-bold text-lg text-white leading-tight">{quiz.title}</p>
+                                                <p className="text-xs text-white/60 mt-1">{quiz.questions.length} Questões</p>
+                                            </div>
+                                            <Button
+                                                onClick={() => setPlayingIndividualQuiz(quiz)}
+                                                className="w-full bg-white text-orange-600 hover:bg-orange-50 font-black shadow-lg rounded-xl h-10 text-xs uppercase tracking-widest gap-2"
+                                            >
+                                                <Play size={14} fill="currentColor" /> JOGAR AGORA
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {loadingQuizzes ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {[1, 2, 3].map(i => <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />)}
