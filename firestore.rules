@@ -122,10 +122,9 @@ service cloud.firestore {
                     // Allow Coordinators to update XP/Stats for any participant (e.g. Visitors)
                     ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
                     // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
-                    // Simplified Self-Update Rule: Allow users to update their own data, 
-                    // BUT explicitly prevent changing their own role (Privilege Escalation protection).
-                    // This allows XP, Stats, Profile, etc. updates without complex affectedKeys lists.
-                    (request.auth.uid == userId && request.resource.data.role == resource.data.role));
+                    // Optimized Self-Update Rule: Allow users to update their own data,
+                    // provided they do NOT touch the 'role' field.
+                    (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])));
 
       // Delete: Admin or Owner only
       allow delete: if isOwnerOrAdmin();
@@ -139,13 +138,13 @@ service cloud.firestore {
                     (isBaseCoord() && getUserBaseId() == get(/databases/$(database)/documents/users/$(userId)).data.baseId);
         
         // Write: Managers or User (for own actions - quiz, task completion, etc)
-        allow create: if isOwnerOrAdmin() || isSecretary() ||
+        // Prioritize USER CHECK first to avoid expensive/failing get() calls
+        allow create: if request.auth.uid == userId ||
+                      isOwnerOrAdmin() || isSecretary() ||
                       (request.auth.token.role == 'coord_base' && request.auth.token.baseId == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
                       (request.auth.token.role == 'coord_distrital' && request.auth.token.districtId == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
                       (isBaseCoord() && getUserBaseId() == get(/databases/$(database)/documents/users/$(userId)).data.baseId) ||
-                      (isDistrictCoord() && getUserDistrictId() == get(/databases/$(database)/documents/users/$(userId)).data.districtId) ||
-                      // Allow users to create their own XP history entries (quiz completion, etc)
-                      request.auth.uid == userId;
+                      (isDistrictCoord() && getUserDistrictId() == get(/databases/$(database)/documents/users/$(userId)).data.districtId);
         
         // Update/Delete: Only managers
         allow update, delete: if isOwnerOrAdmin() || isSecretary() ||
