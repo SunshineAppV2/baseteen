@@ -76,21 +76,28 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
     };
 
     const finishQuiz = async () => {
+        if (!userId) {
+            console.error('[QUIZ DEBUG] Cannot save: Invalid User ID (undefined or empty)');
+            alert("Erro: Usuário não identificado. Recarregue a página.");
+            return;
+        }
+
         if (isSaving || finished) return;
-        console.log('[QUIZ DEBUG] Finishing quiz with final score:', score);
+        console.log('[QUIZ DEBUG] Finishing quiz for User:', userId, 'with final score:', score);
         setFinished(true);
         setIsSaving(true);
 
         if (score > 0) {
             try {
-                console.log('[QUIZ DEBUG] Saving XP to Firestore...');
+                console.log('[QUIZ DEBUG] Step 1: Saving XP to Users collection...');
                 const userRef = doc(db, "users", userId);
                 await updateDoc(userRef, {
                     xp: increment(score),
                     "stats.currentXp": increment(score)
                 });
-                console.log('[QUIZ DEBUG] XP updated successfully');
+                console.log('[QUIZ DEBUG] Step 1 Success: XP updated');
 
+                console.log('[QUIZ DEBUG] Step 2: Creating History Entry...');
                 await addDoc(collection(db, "users", userId, "xp_history"), {
                     amount: score,
                     type: 'quiz',
@@ -98,10 +105,15 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                     createdAt: serverTimestamp(),
                     reason: `Participação Individual no Quiz: ${quiz.title}`
                 });
-                console.log('[QUIZ DEBUG] XP history entry created successfully');
-            } catch (err) {
+                console.log('[QUIZ DEBUG] Step 2 Success: History entry created');
+            } catch (err: any) {
                 console.error("[QUIZ DEBUG] Error saving individual quiz result:", err);
-                alert(`Erro ao salvar pontuação: ${err}`);
+                // Detalhar o erro se possível
+                if (err.code === 'permission-denied') {
+                    alert(`Erro de Permissão: Não foi possível salvar seus pontos. Verifique se você está logado corretamente.`);
+                } else {
+                    alert(`Erro ao salvar pontuação: ${err.message || err}`);
+                }
             }
         } else {
             console.warn('[QUIZ DEBUG] Score is 0, skipping XP save');
@@ -201,19 +213,38 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                         {currentQuestion.statement}
                     </h1>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="grid grid-cols-1 gap-4">
                         {(currentQuestion.alternatives || []).map((alt: any, idx: number) => {
                             const isSelected = selectedAlt === idx;
                             const isCorrect = currentQuestion.correctAnswer === idx;
 
-                            let stateClass = "border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/20 hover:scale-[1.01]";
+                            let stateClass = "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/30 hover:scale-[1.01] text-white shadow-lg";
+                            let letterClass = "bg-white/10 text-white group-hover:bg-primary group-hover:text-white";
+
                             if (answered) {
-                                if (isCorrect) stateClass = "border-green-500/50 bg-green-500/20 text-green-400 shadow-[0_0_30px_rgba(34,197,94,0.1)] scale-[1.02] z-10";
-                                else if (isSelected) stateClass = "border-red-500/50 bg-red-500/20 text-red-400 opacity-80 opacity-60";
-                                else stateClass = "border-white/5 opacity-30 grayscale-[0.5]";
+                                if (isCorrect) {
+                                    stateClass = "border-green-500 bg-green-500/20 text-white shadow-[0_0_30px_rgba(34,197,94,0.3)] scale-[1.02] z-10 ring-2 ring-green-500";
+                                    letterClass = "bg-green-500 text-white";
+                                } else if (isSelected) {
+                                    stateClass = "border-red-500/50 bg-red-500/20 text-white/50 opacity-100";
+                                    letterClass = "bg-red-500/50 text-white";
+                                } else {
+                                    stateClass = "border-white/5 bg-transparent text-white/30 opacity-50 grayscale";
+                                    letterClass = "bg-white/5 text-white/20";
+                                }
                             } else if (isSelected) {
-                                stateClass = "border-primary bg-primary/20 scale-[1.01] shadow-[0_0_30px_rgba(59,130,246,0.15)]";
+                                stateClass = "border-primary bg-primary/20 scale-[1.01] shadow-[0_0_30px_rgba(59,130,246,0.3)] text-white ring-2 ring-primary";
+                                letterClass = "bg-primary text-white";
                             }
+
+                            // Cores sutis para cada letra no estado normal
+                            const letterColors = [
+                                "group-hover:text-blue-400 group-hover:bg-blue-400/10",
+                                "group-hover:text-amber-400 group-hover:bg-amber-400/10",
+                                "group-hover:text-red-400 group-hover:bg-red-400/10",
+                                "group-hover:text-green-400 group-hover:bg-green-400/10"
+                            ];
+                            const currentLetterColor = (!answered && !isSelected) ? letterColors[idx % 4] : "";
 
                             return (
                                 <button
@@ -221,22 +252,26 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                                     onClick={() => handleSubmit(idx)}
                                     disabled={answered}
                                     className={clsx(
-                                        "flex items-center gap-6 p-7 rounded-[32px] border-2 transition-all text-left relative group",
+                                        "flex items-center gap-6 p-6 md:p-8 rounded-[24px] border-2 transition-all duration-300 text-left relative group backdrop-blur-md",
                                         stateClass
                                     )}
                                 >
                                     <div className={clsx(
-                                        "w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl transition-all shadow-lg",
-                                        isSelected ? "bg-white text-primary" : "bg-white/10 text-white/50 group-hover:bg-primary group-hover:text-white",
-                                        answered && isCorrect && "bg-green-500 text-white",
-                                        answered && isSelected && !isCorrect && "bg-red-500 text-white"
+                                        "w-16 h-16 rounded-2xl flex items-center justify-center font-black text-3xl transition-all shadow-inner shrink-0",
+                                        letterClass,
+                                        (!answered && !isSelected) && currentLetterColor
                                     )}>
-                                        {String.fromCharCode(65 + idx)}
+                                        {["A", "B", "C", "D"][idx]}
                                     </div>
-                                    <span className="font-black text-2xl md:text-3xl tracking-tight leading-tight flex-1">{alt.text || alt}</span>
+                                    <span className={clsx(
+                                        "font-bold text-xl md:text-3xl tracking-tight leading-snug flex-1",
+                                        (answered && isCorrect) && "text-white drop-shadow-md"
+                                    )}>
+                                        {alt.text || alt}
+                                    </span>
 
                                     {answered && isCorrect && (
-                                        <div className="p-2 bg-green-500 rounded-full shadow-lg scale-in-center">
+                                        <div className="absolute right-6 top-1/2 -translate-y-1/2 p-2 bg-green-500 rounded-full shadow-lg scale-in-center animate-bounce-short">
                                             <CheckCircle2 className="text-white" size={24} />
                                         </div>
                                     )}

@@ -123,9 +123,8 @@ service cloud.firestore {
                     ((isBaseCoord() || isDistrictCoord()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats'])) ||
                     // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
                     (request.auth.uid == userId && 
-                      (request.resource.data.role == resource.data.role && // Prevent self-role-change
-                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking', 'phoneNumber']) ||
-                        request.auth.token.email == 'master@baseteen.com')));
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'stats', 'photoURL', 'displayName', 'participatesInRanking', 'phoneNumber']) ||
+                         request.auth.token.email == 'master@baseteen.com')));
 
       // Delete: Admin or Owner only
       allow delete: if isOwnerOrAdmin();
