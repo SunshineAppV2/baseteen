@@ -17,7 +17,8 @@ import {
     Share2,
     Gamepad,
     Link as LinkIcon,
-    X
+    X,
+    AlertCircle
 } from "lucide-react";
 import {
     collection,
@@ -77,7 +78,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const event = events[0];
     const { data: allQuizzes } = useCollection<MasterQuiz>("master_quizzes");
 
-    const isManager = user?.role === 'master' || user?.role === 'coord_geral';
+    const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria';
     const isBaseCoord = user?.role === 'coord_base';
 
     // Base Coord State
@@ -400,6 +401,14 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             )}
                         </div>
                     </div>
+                </div>
+            )}
+
+            {!isManager && !isBaseCoord && (
+                <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 col-span-full">
+                    <AlertCircle size={48} className="mx-auto text-gray-300 mb-4" />
+                    <h3 className="text-xl font-bold text-gray-400">Acesso Restrito</h3>
+                    <p className="text-gray-400 mt-2 font-medium">Você está visualizando este evento como convidado.<br />Apenas Coordenadores podem gerenciar inscrições.</p>
                 </div>
             )}
 
