@@ -1239,10 +1239,33 @@ export default function QuizManagementPage() {
                                         >
                                             INICIAR ÁREA <ArrowRight size={20} />
                                         </Button>
-                                        <div className="flex items-center justify-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest pt-2">
+
+                                        <div className="flex items-center justify-between gap-2 mt-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={(e) => { e.stopPropagation(); handleEditClick(quiz); }}
+                                                className="flex-1 h-10 rounded-xl font-bold bg-white border-2 border-gray-100 text-gray-600 hover:text-primary hover:border-primary/30 hover:bg-blue-50 transition-all gap-2"
+                                            >
+                                                <Edit3 size={16} /> EDITAR
+                                            </Button>
+
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={(e) => handleDeleteQuiz(quiz.id, e)}
+                                                className="h-10 w-10 p-0 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border hover:border-red-200 transition-all"
+                                            >
+                                                <Trash2 size={16} />
+                                            </Button>
+                                        </div>
+
+                                        <div className="flex items-center justify-center gap-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest pt-1 border-t border-gray-50 mt-1">
                                             <span>{quiz.questions.length} Questões</span>
                                             <div className="w-1 h-1 bg-gray-300 rounded-full" />
-                                            <span>Tempo: Auto</span>
+                                            <span className={quiz.availableToStudents ? "text-green-500 flex items-center gap-1" : "text-gray-400"}>
+                                                {quiz.availableToStudents ? <><CheckCircle2 size={10} /> Disponível</> : "Oculto"}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
