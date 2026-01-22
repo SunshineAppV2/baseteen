@@ -128,13 +128,29 @@ export default function QuizManagementPage() {
     // Compute Event Quizzes
     const eventQuizzesMap = new Map<string, MasterQuiz>();
     if (activeEvents.length > 0 && myRegistrations.length > 0 && myQuizzes.length > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize today to start of day
+
         activeEvents.forEach(ev => {
             // Check if user is registered for this event
             if (myRegistrations.some(r => r.eventId === ev.id)) {
-                ev.linkedQuizzes?.forEach((quizId: string) => {
-                    const foundQuiz = myQuizzes.find(q => q.id === quizId);
-                    if (foundQuiz) eventQuizzesMap.set(quizId, foundQuiz);
-                });
+
+                // Date Check: Only show if event date is today or passed
+                let isDateValid = true;
+                if (ev.date) {
+                    const eventDate = ev.date.toDate();
+                    eventDate.setHours(0, 0, 0, 0);
+                    if (eventDate > today) {
+                        isDateValid = false; // Event is in the future
+                    }
+                }
+
+                if (isDateValid) {
+                    ev.linkedQuizzes?.forEach((quizId: string) => {
+                        const foundQuiz = myQuizzes.find(q => q.id === quizId);
+                        if (foundQuiz) eventQuizzesMap.set(quizId, foundQuiz);
+                    });
+                }
             }
         });
     }
