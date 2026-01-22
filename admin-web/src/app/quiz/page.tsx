@@ -1398,7 +1398,58 @@ export default function QuizManagementPage() {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                            {myQuizzes.map((quiz) => (
+                            {myQuizzes.filter(quiz => {
+                                // 1. Super Users see everything
+                                const isSuperUser = ['master', 'admin', 'coord_geral', 'secretaria', 'coord_distrital', 'coord_regiao', 'coord_associacao', 'coord_uniao'].includes(user?.role || '');
+                                if (isSuperUser) return true;
+
+                                // 2. Base Coordinators
+                                if (user?.role === 'coord_base') {
+                                    // If it's my base's quiz, I can see/manage it
+                                    if (quiz.baseId === user.baseId) return true;
+
+                                    // If it belongs to another base, hide it
+                                    if (quiz.baseId && quiz.baseId !== user.baseId) return false;
+
+                                    // If it's Global (no baseId), apply restrictions (Availability & Dates)
+                                    if (!quiz.availableToStudents) return false;
+
+                                    // Date Restriction Logic for Global Quizzes
+                                    if (quiz.eventStartDate || quiz.eventEndDate) {
+                                        const now = new Date();
+
+                                        // If start date exists and is in future, hide
+                                        if (quiz.eventStartDate) {
+                                            const start = quiz.eventStartDate.toDate ? quiz.eventStartDate.toDate() : new Date(quiz.eventStartDate);
+                                            if (now < start) return false;
+                                        }
+
+                                        // If end date exists and is in past, hide
+                                        if (quiz.eventEndDate) {
+                                            const end = quiz.eventEndDate.toDate ? quiz.eventEndDate.toDate() : new Date(quiz.eventEndDate);
+                                            if (now > end) return false;
+                                        }
+                                    }
+                                    return true;
+                                }
+
+                                // Default fallback for other roles
+                                if (!quiz.availableToStudents) return false;
+                                // Also apply date check generally for non-super users
+                                if (quiz.eventStartDate || quiz.eventEndDate) {
+                                    const now = new Date();
+                                    if (quiz.eventStartDate) {
+                                        const start = quiz.eventStartDate.toDate ? quiz.eventStartDate.toDate() : new Date(quiz.eventStartDate);
+                                        if (now < start) return false;
+                                    }
+                                    if (quiz.eventEndDate) {
+                                        const end = quiz.eventEndDate.toDate ? quiz.eventEndDate.toDate() : new Date(quiz.eventEndDate);
+                                        if (now > end) return false;
+                                    }
+                                }
+
+                                return true;
+                            }).map((quiz) => (
                                 <div
                                     key={quiz.id}
                                     className="group bg-white rounded-[32px] p-8 border-2 border-transparent hover:border-primary/20 hover:shadow-[0_20px_50px_rgba(59,130,246,0.1)] transition-all duration-500 cursor-default"
