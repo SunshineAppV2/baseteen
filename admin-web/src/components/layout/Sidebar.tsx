@@ -158,6 +158,12 @@ export default function Sidebar() {
                     visible: true
                 },
                 {
+                    icon: Calendar,
+                    label: "Eventos",
+                    href: "/events",
+                    visible: ['master', 'admin', 'secretaria', 'coord_geral', 'coord_base'].includes(user?.role || '')
+                },
+                {
                     icon: CalendarCheck,
                     label: "Chamada",
                     href: "/attendance",
