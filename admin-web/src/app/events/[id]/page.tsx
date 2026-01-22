@@ -80,7 +80,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const event = events[0];
     const { data: allQuizzes } = useCollection<MasterQuiz>("master_quizzes");
 
-    const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria';
+    const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria' || user?.role === 'coord_associacao';
     const isBaseCoord = user?.role === 'coord_base';
 
     // Base Coord State

@@ -54,7 +54,7 @@ export default function EventsPage() {
         status: "draft" as Event['status']
     });
 
-    const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria';
+    const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria' || user?.role === 'coord_associacao';
 
     // --- Actions ---
     const handleCreateClick = () => {

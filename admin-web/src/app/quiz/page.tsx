@@ -1889,7 +1889,7 @@ export default function QuizManagementPage() {
                                     </div>
 
                                     {/* Opção de Visibilidade para Alunos e Eventos */}
-                                    {(user?.role === 'coord_base' || user?.role === 'master' || user?.role === 'admin' || user?.role === 'coord_geral' || user?.role === 'secretaria') && (
+                                    {(user?.role === 'coord_base' || user?.role === 'master' || user?.role === 'admin' || user?.role === 'coord_geral' || user?.role === 'secretaria' || user?.role === 'coord_associacao') && (
                                         <div className="md:col-span-2 space-y-3">
                                             {/* Estudantes da Base */}
                                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-4">
@@ -1906,8 +1906,8 @@ export default function QuizManagementPage() {
                                                 </label>
                                             </div>
 
-                                            {/* Disponível para Eventos (Apenas Gestores Gerais) */}
-                                            {['master', 'admin', 'coord_geral', 'secretaria'].includes(user?.role || '') && (
+                                            {/* Disponível para Eventos (Apenas Gestores Gerais e Associação) */}
+                                            {['master', 'admin', 'coord_geral', 'secretaria', 'coord_associacao'].includes(user?.role || '') && (
                                                 <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
                                                     <input
                                                         type="checkbox"

@@ -404,13 +404,13 @@ service cloud.firestore {
     // EVENTS (Eventos Oficiais)
     match /events/{eventId} {
         allow read: if isSignedIn();
-        allow write: if isOwnerOrAdmin() || hasRole('coord_geral');
+        allow write: if isOwnerOrAdmin() || hasRole('coord_geral') || hasRole('coord_associacao');
     }
 
     // EVENT REGISTRATIONS (Inscrições)
     match /event_registrations/{registrationId} {
         allow read: if isSignedIn();
-        allow write: if isOwnerOrAdmin() || hasRole('coord_geral') || isBaseCoord(); 
+        allow write: if isOwnerOrAdmin() || hasRole('coord_geral') || hasRole('coord_associacao') || isBaseCoord(); 
     }
   }
 }
