@@ -111,6 +111,12 @@ export default function QuizManagementPage() {
     const [showQR, setShowQR] = useState(false);
     const [liveStatus, setLiveStatus] = useState<'idle' | 'waiting' | 'in_progress' | 'finished'>('idle');
 
+    // User History (for disabling played quizzes)
+    const { data: userHistory } = useCollection<any>(
+        user?.uid ? `users/${user.uid}/xp_history` : "",
+        [where("type", "==", "quiz")]
+    );
+
     // Phase Control
     const [isResultsVisible, setIsResultsVisible] = useState(false);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -1151,12 +1157,18 @@ export default function QuizManagementPage() {
                                                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recompensa</span>
                                                 <span className="font-black text-red-600 italic">Até {quiz.questions.reduce((acc: number, q: any) => acc + (q.xpValue || 0), 0)} XP</span>
                                             </div>
-                                            <Button
-                                                onClick={() => setPlayingIndividualQuiz(quiz)}
-                                                className="bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-2xl px-6 py-5 font-black text-sm shadow-lg shadow-red-500/20 hover:scale-105 transition-all"
-                                            >
-                                                JOGAR AGORA
-                                            </Button>
+                                            {userHistory.some(h => (h.quizId === quiz.id) || (h.taskTitle && h.taskTitle.includes(quiz.title)) || (h.reason && h.reason.includes(quiz.title))) ? (
+                                                <div className="flex items-center gap-2 text-green-600 font-black text-sm bg-green-50 px-4 py-2 rounded-xl border border-green-100">
+                                                    <CheckCircle2 size={16} /> COMPLETADO
+                                                </div>
+                                            ) : (
+                                                <Button
+                                                    onClick={() => setPlayingIndividualQuiz(quiz)}
+                                                    className="bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-2xl px-6 py-5 font-black text-sm shadow-lg shadow-red-500/20 hover:scale-105 transition-all"
+                                                >
+                                                    JOGAR AGORA
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -1206,12 +1218,18 @@ export default function QuizManagementPage() {
                                                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recompensa</span>
                                                 <span className="font-black text-primary italic">Até {quiz.questions.reduce((acc: number, q: any) => acc + (q.xpValue || 0), 0)} XP</span>
                                             </div>
-                                            <Button
-                                                onClick={() => setPlayingIndividualQuiz(quiz)}
-                                                className="rounded-2xl px-6 py-5 font-black text-sm shadow-lg shadow-primary/20 hover:scale-105 transition-all"
-                                            >
-                                                JOGAR AGORA
-                                            </Button>
+                                            {userHistory.some(h => (h.quizId === quiz.id) || (h.taskTitle && h.taskTitle.includes(quiz.title)) || (h.reason && h.reason.includes(quiz.title))) ? (
+                                                <div className="flex items-center gap-2 text-green-600 font-black text-sm bg-green-50 px-4 py-2 rounded-xl border border-green-100">
+                                                    <CheckCircle2 size={16} /> COMPLETADO
+                                                </div>
+                                            ) : (
+                                                <Button
+                                                    onClick={() => setPlayingIndividualQuiz(quiz)}
+                                                    className="rounded-2xl px-6 py-5 font-black text-sm shadow-lg shadow-primary/20 hover:scale-105 transition-all"
+                                                >
+                                                    JOGAR AGORA
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

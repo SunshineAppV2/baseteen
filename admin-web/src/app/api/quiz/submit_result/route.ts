@@ -5,7 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export async function POST(req: NextRequest) {
     try {
-        const { userId, score, quizTitle, idToken } = await req.json();
+        const { userId, score, quizId, quizTitle, idToken } = await req.json();
 
         if (!userId || !idToken) {
             return NextResponse.json({ error: "Missing userId, or idToken" }, { status: 400 });
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
             transaction.set(historyRef, {
                 amount: score,
                 type: 'quiz',
+                quizId: quizId || null,
                 taskTitle: `Quiz: ${quizTitle}`,
                 createdAt: FieldValue.serverTimestamp(),
                 reason: `Participação Individual no Quiz: ${quizTitle}`

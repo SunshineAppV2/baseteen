@@ -103,6 +103,7 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                     body: JSON.stringify({
                         userId,
                         score,
+                        quizId: quiz.id,
                         quizTitle: quiz.title,
                         idToken: token
                     })

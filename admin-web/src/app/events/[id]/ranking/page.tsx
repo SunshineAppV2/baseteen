@@ -142,6 +142,10 @@ export default function EventRankingPage({ params }: { params: Promise<{ id: str
                 </div>
                 <div className="flex items-center gap-4">
                     <div className="text-right hidden md:block">
+                        <p className="text-[10px] uppercase font-bold text-white/30">Participantes</p>
+                        <p className="font-mono text-sm text-purple-400">{ranking.length}</p>
+                    </div>
+                    <div className="text-right hidden md:block">
                         <p className="text-[10px] uppercase font-bold text-white/30">Última atualização</p>
                         <p className="font-mono text-sm">{lastUpdated?.toLocaleTimeString()}</p>
                     </div>
