@@ -949,45 +949,103 @@ export default function UsersPage() {
                                     </select>
                                 </div>
 
-                                {newUser.role === 'coord_uniao' && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-text-secondary">União</label>
-                                        <select
-                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
-                                            value={newUser.unionId}
-                                            onChange={(e) => setNewUser({ ...newUser, unionId: e.target.value })}
-                                        >
-                                            <option value="">Selecione a União</option>
-                                            {unions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                                        </select>
-                                    </div>
-                                )}
+                                {/* Hierarchy Selection - Cascading Dropdowns */}
+                                {['coord_uniao', 'coord_associacao', 'coord_regiao', 'coord_distrital', 'coord_base', 'membro'].includes(newUser.role) && (
+                                    <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <MapPin size={14} className="text-primary" />
+                                            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Localização / Vínculo</p>
+                                        </div>
 
-                                {newUser.role === 'coord_associacao' && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-text-secondary">Associação</label>
-                                        <select
-                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
-                                            value={newUser.associationId}
-                                            onChange={(e) => setNewUser({ ...newUser, associationId: e.target.value })}
-                                        >
-                                            <option value="">Selecione a Associação</option>
-                                            {associations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                                        </select>
-                                    </div>
-                                )}
+                                        {/* Union */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-text-secondary">União</label>
+                                            <select
+                                                className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                                                value={newUser.unionId}
+                                                onChange={(e) => setNewUser({ ...newUser, unionId: e.target.value, associationId: "", regionId: "", districtId: "", baseId: "" })}
+                                                disabled={!!currentUser?.unionId} // Locked if creator is restricted
+                                            >
+                                                <option value="">Selecione...</option>
+                                                {unions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                            </select>
+                                        </div>
 
-                                {newUser.role === 'coord_regiao' && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-text-secondary">Região</label>
-                                        <select
-                                            className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20"
-                                            value={newUser.regionId}
-                                            onChange={(e) => setNewUser({ ...newUser, regionId: e.target.value })}
-                                        >
-                                            <option value="">Selecione a Região</option>
-                                            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                        </select>
+                                        {/* Association */}
+                                        {['coord_associacao', 'coord_regiao', 'coord_distrital', 'coord_base', 'membro'].includes(newUser.role) && (
+                                            <div className="space-y-1 animate-fade-in">
+                                                <label className="text-xs font-bold text-text-secondary">Associação</label>
+                                                <select
+                                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                                                    value={newUser.associationId}
+                                                    onChange={(e) => setNewUser({ ...newUser, associationId: e.target.value, regionId: "", districtId: "", baseId: "" })}
+                                                    disabled={!!currentUser?.associationId || (!newUser.unionId && currentUser?.role === 'master')}
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    {associations
+                                                        .filter(a => !newUser.unionId || a.unionId === newUser.unionId)
+                                                        .map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {/* Region */}
+                                        {['coord_regiao', 'coord_distrital', 'coord_base', 'membro'].includes(newUser.role) && (
+                                            <div className="space-y-1 animate-fade-in">
+                                                <label className="text-xs font-bold text-text-secondary">Região</label>
+                                                <select
+                                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                                                    value={newUser.regionId}
+                                                    onChange={(e) => setNewUser({ ...newUser, regionId: e.target.value, districtId: "", baseId: "" })}
+                                                    disabled={!!currentUser?.regionId || (!newUser.associationId && currentUser?.role === 'master')}
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    {regions
+                                                        .filter(r => !newUser.associationId || r.associationId === newUser.associationId)
+                                                        .map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {/* District */}
+                                        {['coord_distrital', 'coord_base', 'membro'].includes(newUser.role) && (
+                                            <div className="space-y-1 animate-fade-in">
+                                                <label className="text-xs font-bold text-text-secondary">Distrito</label>
+                                                <select
+                                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                                                    value={newUser.districtId}
+                                                    onChange={(e) => setNewUser({ ...newUser, districtId: e.target.value, baseId: "" })}
+                                                    disabled={!!currentUser?.districtId}
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    {districts
+                                                        .filter(d => {
+                                                            if (currentUser?.districtId) return d.id === currentUser.districtId;
+                                                            if (newUser.regionId) return d.regionId === newUser.regionId;
+                                                            return true;
+                                                        })
+                                                        .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {/* Base */}
+                                        {['coord_base', 'membro'].includes(newUser.role) && (
+                                            <div className="space-y-1 animate-fade-in">
+                                                <label className="text-xs font-bold text-text-secondary">Base</label>
+                                                <select
+                                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                                                    value={newUser.baseId}
+                                                    onChange={(e) => setNewUser({ ...newUser, baseId: e.target.value })}
+                                                    disabled={currentUser?.role === 'coord_base' || !newUser.districtId}
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    {bases
+                                                        .filter(b => !newUser.districtId || b.districtId === newUser.districtId)
+                                                        .map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -1005,37 +1063,6 @@ export default function UsersPage() {
                                             <option value="3º Trimestre">3º Trimestre</option>
                                             <option value="4º Trimestre">4º Trimestre</option>
                                         </select>
-                                    </div>
-                                )}
-
-                                {(newUser.role === 'coord_distrital' || newUser.role === 'coord_base' || newUser.role === 'membro') && (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-bold text-text-secondary">Distrito</label>
-                                            <select
-                                                className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                value={newUser.districtId}
-                                                onChange={(e) => setNewUser({ ...newUser, districtId: e.target.value, baseId: "" })}
-                                                disabled={!!currentUser?.districtId} // If user is district coord, locked
-                                            >
-                                                <option value="">Nenhum</option>
-                                                {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-bold text-text-secondary">Base</label>
-                                            <select
-                                                className="w-full bg-surface border-none rounded-xl p-3 focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                value={newUser.baseId}
-                                                onChange={(e) => setNewUser({ ...newUser, baseId: e.target.value })}
-                                                disabled={!newUser.districtId || currentUser?.role === 'coord_base'}
-                                            >
-                                                <option value="">Nenhuma</option>
-                                                {bases.filter(b => b.districtId === newUser.districtId).map(b => (
-                                                    <option key={b.id} value={b.id}>{b.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
                                     </div>
                                 )}
 
