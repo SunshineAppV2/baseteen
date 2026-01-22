@@ -336,6 +336,9 @@ export default function QuizManagementPage() {
             title: "",
             description: "",
             availableToStudents: false,
+            availableForEvents: false,
+            eventStartDate: "",
+            eventEndDate: "",
             classification: "todos",
             questions: [
                 {
