@@ -77,6 +77,9 @@ interface MasterQuiz {
     availableToStudents?: boolean;
     baseId?: string;
     classification?: 'pre-adolescente' | 'adolescente' | 'todos';
+    availableForEvents?: boolean;
+    eventStartDate?: any;
+    eventEndDate?: any;
 }
 
 interface QuizHistory {
@@ -148,7 +151,23 @@ export default function QuizManagementPage() {
                 if (isDateValid) {
                     ev.linkedQuizzes?.forEach((quizId: string) => {
                         const foundQuiz = myQuizzes.find(q => q.id === quizId);
-                        if (foundQuiz) eventQuizzesMap.set(quizId, foundQuiz);
+                        if (foundQuiz) {
+                            // NEW: Internal Date Check for Event Quizzes
+                            const now = new Date();
+                            let isTimeInRange = true;
+                            if (foundQuiz.eventStartDate) {
+                                const startDate = foundQuiz.eventStartDate.toDate();
+                                if (now < startDate) isTimeInRange = false;
+                            }
+                            if (foundQuiz.eventEndDate) {
+                                const endDate = foundQuiz.eventEndDate.toDate();
+                                if (now > endDate) isTimeInRange = false;
+                            }
+
+                            if (isTimeInRange) {
+                                eventQuizzesMap.set(quizId, foundQuiz);
+                            }
+                        }
                     });
                 }
             }
@@ -277,6 +296,9 @@ export default function QuizManagementPage() {
         title: "",
         description: "",
         availableToStudents: false,
+        availableForEvents: false,
+        eventStartDate: "",
+        eventEndDate: "",
         classification: "todos" as 'pre-adolescente' | 'adolescente' | 'todos',
         questions: [] as QuizQuestion[]
     });
@@ -338,6 +360,9 @@ export default function QuizManagementPage() {
             title: "",
             description: "",
             availableToStudents: false,
+            availableForEvents: false,
+            eventStartDate: "",
+            eventEndDate: "",
             classification: "todos",
             questions: []
         });
@@ -350,6 +375,9 @@ export default function QuizManagementPage() {
             title: quiz.title,
             description: quiz.description,
             availableToStudents: quiz.availableToStudents || false,
+            availableForEvents: quiz.availableForEvents || false,
+            eventStartDate: quiz.eventStartDate ? quiz.eventStartDate.toDate().toISOString().substring(0, 16) : "",
+            eventEndDate: quiz.eventEndDate ? quiz.eventEndDate.toDate().toISOString().substring(0, 16) : "",
             classification: quiz.classification || "todos",
             questions: quiz.questions.map(q => ({
                 ...q,
@@ -409,7 +437,9 @@ export default function QuizManagementPage() {
                 description: formData.description,
                 questions: normalizedQuestions, // Use normalized questions
                 availableToStudents: formData.availableToStudents,
-                availableForEvents: (formData as any).availableForEvents || false, // NEW FIELD
+                availableForEvents: formData.availableForEvents || false,
+                eventStartDate: formData.eventStartDate ? Timestamp.fromDate(new Date(formData.eventStartDate)) : null,
+                eventEndDate: formData.eventEndDate ? Timestamp.fromDate(new Date(formData.eventEndDate)) : null,
                 classification: formData.classification,
                 updatedAt: new Date()
             };
@@ -1924,18 +1954,46 @@ export default function QuizManagementPage() {
 
                                             {/* Disponível para Eventos (Apenas Gestores Gerais e Associação) */}
                                             {['master', 'admin', 'coord_geral', 'secretaria', 'coord_associacao'].includes(user?.role || '') && (
-                                                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
-                                                    <input
-                                                        type="checkbox"
-                                                        id="availableForEvents"
-                                                        className="w-5 h-5 text-purple-600 rounded focus:ring-purple-600"
-                                                        checked={(formData as any).availableForEvents || false}
-                                                        onChange={e => setFormData({ ...formData, availableForEvents: e.target.checked } as any)}
-                                                    />
-                                                    <label htmlFor="availableForEvents" className="cursor-pointer">
-                                                        <span className="block font-bold text-purple-900">Disponibilizar para Evento?</span>
-                                                        <span className="text-sm text-purple-700">Se marcado, aparecerá na lista de quizzes para vincular aos eventos.</span>
-                                                    </label>
+                                                <div className="space-y-4">
+                                                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
+                                                        <input
+                                                            type="checkbox"
+                                                            id="availableForEvents"
+                                                            className="w-5 h-5 text-purple-600 rounded focus:ring-purple-600"
+                                                            checked={formData.availableForEvents || false}
+                                                            onChange={e => setFormData({ ...formData, availableForEvents: e.target.checked })}
+                                                        />
+                                                        <label htmlFor="availableForEvents" className="cursor-pointer">
+                                                            <span className="block font-bold text-purple-900">Disponibilizar para Evento?</span>
+                                                            <span className="text-sm text-purple-700">Se marcado, aparecerá na lista de quizzes para vincular aos eventos.</span>
+                                                        </label>
+                                                    </div>
+
+                                                    {formData.availableForEvents && (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-purple-50/50 p-4 rounded-xl border border-purple-100/50 animate-fade-in">
+                                                            <div className="space-y-2">
+                                                                <label className="text-xs font-black text-purple-700 uppercase tracking-widest">Data/Hora Início</label>
+                                                                <input
+                                                                    type="datetime-local"
+                                                                    className="w-full bg-white border-purple-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-purple-500/20"
+                                                                    value={formData.eventStartDate}
+                                                                    onChange={e => setFormData({ ...formData, eventStartDate: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <label className="text-xs font-black text-purple-700 uppercase tracking-widest">Data/Hora Término</label>
+                                                                <input
+                                                                    type="datetime-local"
+                                                                    className="w-full bg-white border-purple-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-purple-500/20"
+                                                                    value={formData.eventEndDate}
+                                                                    onChange={e => setFormData({ ...formData, eventEndDate: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <p className="md:col-span-2 text-[10px] text-purple-400 font-medium italic">
+                                                                * Opcional. Se não preenchido, o quiz seguirá a visibilidade geral do evento ativo.
+                                                            </p>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
