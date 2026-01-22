@@ -199,25 +199,25 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
             </div>
 
             {/* Content */}
-            <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col justify-center p-6 relative z-10 overflow-y-auto mt-4 pb-12">
-                <div className="bg-white/5 backdrop-blur-2xl rounded-[40px] p-8 md:p-14 shadow-2xl border border-white/10 relative overflow-hidden group">
+            <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col justify-center p-3 md:p-6 relative z-10 overflow-y-auto mt-2 md:mt-4 pb-12">
+                <div className="bg-white/5 backdrop-blur-2xl rounded-3xl md:rounded-[40px] p-5 md:p-14 shadow-2xl border border-white/10 relative overflow-hidden group">
                     <div className="absolute top-0 left-0 w-2 h-full bg-primary" />
 
-                    <div className="flex items-center justify-between mb-8">
-                        <span className="px-4 py-1.5 bg-primary/20 text-primary text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-primary/20">
+                    <div className="flex items-center justify-between mb-4 md:mb-8">
+                        <span className="px-3 py-1 md:px-4 md:py-1.5 bg-primary/20 text-primary text-[9px] md:text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-primary/20">
                             Fase Atual
                         </span>
                         <div className="flex items-center gap-2 text-white/30 font-black italic">
-                            <span className="text-white text-2xl font-black">{currentQuestion.xpValue || 100}</span>
-                            <span className="text-xs">XP EM JOGO</span>
+                            <span className="text-white text-xl md:text-2xl font-black">{currentQuestion.xpValue || 100}</span>
+                            <span className="text-[10px] md:text-xs">XP EM JOGO</span>
                         </div>
                     </div>
 
-                    <h1 className="text-4xl md:text-6xl font-black text-white mb-14 leading-[1.1] tracking-tight drop-shadow-2xl">
+                    <h1 className="text-2xl md:text-6xl font-black text-white mb-8 md:mb-14 leading-[1.2] md:leading-[1.1] tracking-tight drop-shadow-2xl">
                         {currentQuestion.statement}
                     </h1>
 
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 gap-3 md:gap-4">
                         {(currentQuestion.alternatives || []).map((alt: any, idx: number) => {
                             const isSelected = selectedAlt === idx;
                             const isCorrect = currentQuestion.correctAnswer === idx;
@@ -256,27 +256,27 @@ export default function IndividualQuizPlayer({ quiz, userId, onClose }: Individu
                                     onClick={() => handleSubmit(idx)}
                                     disabled={answered}
                                     className={clsx(
-                                        "flex items-center gap-6 p-6 md:p-8 rounded-[24px] border-2 transition-all duration-300 text-left relative group backdrop-blur-md",
+                                        "flex items-center gap-3 md:gap-6 p-4 md:p-8 rounded-2xl md:rounded-[24px] border-2 transition-all duration-300 text-left relative group backdrop-blur-md",
                                         stateClass
                                     )}
                                 >
                                     <div className={clsx(
-                                        "w-16 h-16 rounded-2xl flex items-center justify-center font-black text-3xl transition-all shadow-inner shrink-0",
+                                        "w-10 h-10 md:w-16 md:h-16 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-lg md:text-3xl transition-all shadow-inner shrink-0",
                                         letterClass,
                                         (!answered && !isSelected) && currentLetterColor
                                     )}>
                                         {["A", "B", "C", "D"][idx]}
                                     </div>
                                     <span className={clsx(
-                                        "font-bold text-xl md:text-3xl tracking-tight leading-snug flex-1",
+                                        "font-bold text-base md:text-3xl tracking-tight leading-snug flex-1",
                                         (answered && isCorrect) && "text-white drop-shadow-md"
                                     )}>
                                         {alt.text || alt}
                                     </span>
 
                                     {answered && isCorrect && (
-                                        <div className="absolute right-6 top-1/2 -translate-y-1/2 p-2 bg-green-500 rounded-full shadow-lg scale-in-center animate-bounce-short">
-                                            <CheckCircle2 className="text-white" size={24} />
+                                        <div className="absolute right-4 md:right-6 top-1/2 -translate-y-1/2 p-1.5 md:p-2 bg-green-500 rounded-full shadow-lg scale-in-center animate-bounce-short">
+                                            <CheckCircle2 className="text-white" size={16} />
                                         </div>
                                     )}
                                 </button>
