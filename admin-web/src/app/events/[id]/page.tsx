@@ -134,13 +134,28 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                     setTotalRegistrations(snapAll.size);
 
                     // Group by Base
+                    // Optimization: We might have many bases, so let's collect unique Base IDs first
+                    const registrations = snapAll.docs.map(doc => ({ id: doc.id, ...doc.data() } as Registration));
+                    const baseIds = new Set<string>();
+
                     const grouped: Record<string, Registration[]> = {};
-                    snapAll.docs.forEach(doc => {
-                        const data = doc.data() as Omit<Registration, 'id'>;
+
+                    // We need to resolve base names. Some registrations might have it, some might need fetching.
+                    // To avoid N+1 reads, let's just make a map of baseId -> baseName if we can, or rely on what's in registration.
+
+                    // Strategy: Use what is in registration 'baseName'. If missing, falback to ID.
+                    // Ideally we should fix data at source (which we did in previous step). 
+                    // But for display fix NOW without migrations:
+
+                    // Let's settle for fixing the "future" data with the previous step. 
+                    // But to fix the "view" right now for records that have ID but no Name or partial name:
+
+                    registrations.forEach(data => {
                         const bName = data.baseName || `Base ${data.baseId?.substring(0, 5)}...`;
                         if (!grouped[bName]) grouped[bName] = [];
-                        grouped[bName].push({ ...data, id: doc.id });
+                        grouped[bName].push(data);
                     });
+
                     setRegistrationsByBase(grouped);
                 }
 
@@ -172,6 +187,15 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                 }
             });
 
+            // Fetch correct base name for the coordinator
+            let coordinatorBaseName = "Base " + user.baseId!.substring(0, 5);
+            try {
+                const baseDoc = await getDoc(doc(db, "bases", user.baseId!));
+                if (baseDoc.exists()) {
+                    coordinatorBaseName = baseDoc.data().name;
+                }
+            } catch (e) { console.error("Error fetching base name:", e); }
+
             // Add new
             Array.from(selectedUsers).forEach(userId => {
                 if (!currentRegIds.has(userId)) {
@@ -185,10 +209,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                         createdAt: serverTimestamp(),
                         status: 'registered',
                         userDisplayName: memberInfo?.displayName || "Membro",
-                        // Note: user.baseName might not be in the user context strictly, 
-                        // but we can try to get it. For now, let's use a placeholder or check if user object has it.
-                        // Ideally we should have fetched the base details, but for now:
-                        baseName: (user as any).baseName || "Base " + user.baseId!.substring(0, 5)
+                        baseName: coordinatorBaseName
                     });
                 }
             });

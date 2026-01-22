@@ -124,7 +124,7 @@ service cloud.firestore {
                     // Allow users to update their own profile and XP/stats (for quizzes, tasks, etc)
                     // Optimized Self-Update Rule: Allow users to update their own data.
                     // safely checking if 'role' is unchanged (using get() to avoid errors if field missing).
-                    (request.auth.uid == userId && request.resource.data.get('role', null) == resource.data.get('role', null)));
+                    (request.auth.uid == userId && request.resource.data.get('role', null) == resource.data.get('role', null));
 
       // Delete: Admin or Owner only
       allow delete: if isOwnerOrAdmin();
@@ -332,7 +332,7 @@ service cloud.firestore {
     // MASTER QUIZZES (Play Quiz / Arena)
     match /master_quizzes/{quizId} {
         allow read: if isSignedIn();
-        allow write: if isOwnerOrAdmin() || isBaseCoord();
+        allow write: if isOwnerOrAdmin() || isBaseCoord() || hasRole('coord_associacao') || isSecretary();
     }
 
     // LOGS
