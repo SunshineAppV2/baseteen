@@ -15,8 +15,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import PointHistoryModal from "./PointHistoryModal";
-
-// ... interfaces ...
+import { BaseRanking } from "@/components/ranking/BaseRanking";
 
 interface District {
     id: string;
@@ -142,7 +141,7 @@ export default function RankingPage() {
     const [filterDistrict, setFilterDistrict] = useState("all");
     const [filterBase, setFilterBase] = useState("all");
     const [filterClassification, setFilterClassification] = useState("all");
-    const [activeTab, setActiveTab] = useState<"geral" | "eventos">("geral");
+    const [activeTab, setActiveTab] = useState<"geral" | "eventos" | "bases">("geral");
 
     // Fetch Events for the "Por Evento" tab
     const { data: allEvents } = useCollection<any>("events", [where("status", "in", ["active", "finished"])]);
@@ -252,6 +251,15 @@ export default function RankingPage() {
                         )}
                     >
                         Rankings de Eventos
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("bases")}
+                        className={clsx(
+                            "px-6 py-2 rounded-lg text-sm font-bold transition-all",
+                            activeTab === "bases" ? "bg-white text-primary shadow-sm" : "text-gray-500 hover:text-gray-700"
+                        )}
+                    >
+                        Ranking de Bases
                     </button>
                 </div>
             </div>
@@ -460,7 +468,7 @@ export default function RankingPage() {
                     </div>
 
                 </>
-            ) : (
+            ) : activeTab === 'eventos' ? (
                 /* Events Ranking Tab */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {allEvents.length === 0 ? (
@@ -494,6 +502,8 @@ export default function RankingPage() {
                         ))
                     )}
                 </div>
+            ) : (
+                <BaseRanking />
             )}
 
             {selectedUserForHistory && (

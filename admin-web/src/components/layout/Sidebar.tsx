@@ -179,13 +179,13 @@ export default function Sidebar() {
                     icon: Trophy,
                     label: "Ranking",
                     href: "/ranking",
-                    visible: ['master', 'admin', 'coord_geral', 'coord_distrital', 'coord_regiao', 'coord_associacao', 'coord_uniao', 'coord_base', 'secretaria'].includes(user?.role || '')
+                    visible: ['master', 'admin', 'coord_geral', 'coord_uniao', 'coord_associacao', 'secretaria'].includes(user?.role || '')
                 },
                 {
                     icon: Trophy,
                     label: "Ranking Bases",
                     href: "/ranking-bases",
-                    visible: ['master', 'admin', 'coord_geral', 'coord_uniao', 'coord_associacao', 'coord_regiao', 'coord_distrital', 'secretaria'].includes(user?.role || '')
+                    visible: false
                 },
                 {
                     icon: Trophy,
