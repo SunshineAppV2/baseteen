@@ -40,6 +40,7 @@ import * as XLSX from 'xlsx';
 import { clsx } from "clsx";
 import QRCode from "react-qr-code";
 import { Copy, Share2 } from "lucide-react";
+import { ManualInputModal } from "./ManualInputModal";
 import {
     doc,
     getDoc,
@@ -317,6 +318,8 @@ export default function QuizManagementPage() {
     const [targetBaseId, setTargetBaseId] = useState("");
     const { data: allBases } = useCollection<any>("bases");
     const [isSimplifiedMode, setIsSimplifiedMode] = useState(false);
+    const [isManualInputOpen, setIsManualInputOpen] = useState(false);
+    const [manualInputQuiz, setManualInputQuiz] = useState<MasterQuiz | null>(null);
 
     // Auto-enable simplified mode for Master and Missionários de Cristo
     useEffect(() => {
@@ -1367,12 +1370,28 @@ export default function QuizManagementPage() {
                                                 <p className="font-bold text-lg text-white leading-tight">{quiz.title}</p>
                                                 <p className="text-xs text-white/60 mt-1">{quiz.questions.length} Questões</p>
                                             </div>
-                                            <Button
-                                                onClick={() => setPlayingIndividualQuiz(quiz)}
-                                                className="w-full bg-white text-orange-600 hover:bg-orange-50 font-black shadow-lg rounded-xl h-10 text-xs uppercase tracking-widest gap-2"
-                                            >
-                                                <Play size={14} fill="currentColor" /> JOGAR AGORA
-                                            </Button>
+                                            <div className="flex flex-col gap-2">
+                                                <Button
+                                                    onClick={() => setPlayingIndividualQuiz(quiz)}
+                                                    className="w-full bg-white text-orange-600 hover:bg-orange-50 font-black shadow-lg rounded-xl h-10 text-xs uppercase tracking-widest gap-2"
+                                                >
+                                                    <Play size={14} fill="currentColor" /> JOGAR AGORA
+                                                </Button>
+
+                                                {/* Manual Input for Coord Base */}
+                                                {user?.role === 'coord_base' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        onClick={() => {
+                                                            setManualInputQuiz(quiz);
+                                                            setIsManualInputOpen(true);
+                                                        }}
+                                                        className="w-full bg-white/10 text-white hover:bg-white/20 border border-white/20 font-bold rounded-xl h-9 text-[10px] uppercase tracking-wider gap-2"
+                                                    >
+                                                        <FileText size={12} /> Lançar Nota Manual
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -2276,6 +2295,18 @@ export default function QuizManagementPage() {
                         </div>
                     </div>
                 </div>
+            )}
+            {/* Manual Input Modal */}
+            {isManualInputOpen && manualInputQuiz && user?.baseId && (
+                <ManualInputModal
+                    quizTitle={manualInputQuiz.title}
+                    quizId={manualInputQuiz.id}
+                    baseId={user.baseId}
+                    onClose={() => {
+                        setIsManualInputOpen(false);
+                        setManualInputQuiz(null);
+                    }}
+                />
             )}
         </div >
     );
