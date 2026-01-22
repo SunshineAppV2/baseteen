@@ -179,7 +179,7 @@ export default function Sidebar() {
                     icon: Trophy,
                     label: "Ranking",
                     href: "/ranking",
-                    visible: ['master', 'admin', 'coord_geral', 'coord_uniao', 'coord_associacao', 'secretaria'].includes(user?.role || '')
+                    visible: ['master', 'admin', 'coord_geral', 'coord_uniao', 'coord_associacao', 'secretaria', 'coord_base'].includes(user?.role || '')
                 },
                 {
                     icon: Trophy,
