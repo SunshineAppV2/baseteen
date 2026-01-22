@@ -11,7 +11,8 @@ import {
     Search,
     Filter,
     MapPin,
-    User
+    User,
+    Calendar
 } from "lucide-react";
 import { clsx } from "clsx";
 import PointHistoryModal from "./PointHistoryModal";
