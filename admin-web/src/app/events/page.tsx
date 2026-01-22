@@ -251,7 +251,9 @@ export default function EventsPage() {
                     <div className="text-center py-20 bg-gray-50 rounded-[40px] border-2 border-dashed border-gray-200">
                         <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
                         <h3 className="text-xl font-bold text-gray-400">Nenhum evento criado</h3>
-                        <p className="text-gray-300 text-sm mt-1">Clique em "Novo Evento" para começar.</p>
+                        <p className="text-gray-300 text-sm mt-1">
+                            {isManager ? 'Clique em "Novo Evento" para começar.' : 'Aguarde o cadastro de novos eventos.'}
+                        </p>
                     </div>
                 )}
             </div>

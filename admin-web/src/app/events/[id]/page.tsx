@@ -296,6 +296,15 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                 {/* Manager Actions: Status Control */}
                 {isManager && (
                     <div className="flex items-center gap-2">
+                        {/* NOVO: Botão de Ranking ao Vivo */}
+                        <Button
+                            variant="outline"
+                            className="bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 mr-2"
+                            onClick={() => router.push(`/events/${eventId}/ranking`)}
+                        >
+                            <Gamepad size={18} className="mr-2" /> RANKING AO VIVO
+                        </Button>
+
                         {event.status === 'draft' && (
                             <Button
                                 className="bg-blue-600 hover:bg-blue-700 text-white gap-2 rounded-xl shadow-lg shadow-blue-600/20"

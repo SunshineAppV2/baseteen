@@ -1,57 +1,38 @@
-# Plano de Implementação: Módulo de Eventos e Inscrições
+# Implementação Concluída: Módulo de Eventos e Inscrições
 
-## 1. Visão Geral
-Criação de um sistema robusto para gestão de eventos oficiais (ex: Camporis, Olimpíadas), onde o **Coordenador Geral** cria o evento e os **Coordenadores de Base** inscrevem seus respectivos alunos. Os eventos poderão ter Quizzes exclusivos vinculados.
+## 1. Visão Geral (Status: 100% Concluído)
+O sistema de gestão de eventos oficiais foi implementado com sucesso. Permite que Coordenadores Gerais criem e gerenciem eventos, Coordenadores de Base inscrevam alunos, e alunos participem de quizzes exclusivos durante o evento.
 
-## 2. Estrutura de Dados (Firestore)
+## 2. Funcionalidades Entregues
 
-### Coleção `events`
-Armazena os dados do evento.
-- `title`: string
-- `description`: string
-- `date`: timestamp
-- `status`: 'draft' (Rascunho) | 'open' (Inscrições Abertas) | 'active' (Em andamento/Quizzes Liberados) | 'finished' (Encerrado)
-- `linkedQuizzes`: array de strings (IDs dos quizzes que serão rodados neste evento)
+### A. Gestão de Eventos (Backoffice)
+- [x] **CRUD de Eventos**: Criação, edição e exclusão de eventos Oficiais.
+- [x] **Controle de Status**: Fluxo completo implementado (Rascunho -> Inscrições Abertas -> Em Andamento -> Encerrado).
+- [x] **Gestão de Quizzes**:
+    - Flag `availableForEvents` nos Quizzes.
+    - Interface para vincular apenas quizzes elegíveis ao evento.
+- [x] **Ranking ao Vivo**:
+    - Nova tela `/events/[id]/ranking` com atualização em tempo real (60s).
+    - Exclusiva para projeção em telões.
+    - Soma pontos apenas dos quizzes do evento.
 
-### Coleção `event_registrations`
-Controla quem vai participar.
-- `eventId`: ID do evento
-- `userId`: ID do aluno
-- `baseId`: ID da base do aluno
-- `registeredBy`: ID do coordenador que fez a inscrição
-- `createdAt`: data da inscrição
+### B. Inscrições (Coordenadores de Base)
+- [x] **Inscrição em Massa**: Interface para selecionar múltiplos alunos da base e inscrevê-los de uma vez.
+- [x] **Validação**: Apenas eventos "Abertos" aceitam novas inscrições.
+- [x] **Relatórios**: Painel para Gestores visualizarem inscritos agrupados por Base.
 
-## 3. Interfaces e Fluxos
+### C. Experiência do Aluno
+- [x] **Área de Quiz Inteligente**:
+    - Nova seção "Quizzes de Eventos Ativos" aparece no topo da tela `/quiz` apenas se o aluno estiver inscrito e o evento estiver ativo.
+- [x] **Gamificação**: Pontuação integrada ao perfil do aluno.
 
-### A. Painel do Coordenador Geral (Gestão)
-1.  **Criar Evento:** Formulário com Título, Data, Descrição.
-2.  **Gerenciar Quizzes do Evento:**
-    - Ao ver os detalhes de um evento, o Coord. Geral pode "Adicionar Quiz" (escolhendo da lista de quizzes gerais).
-    - Na tela de criação de Quiz "Master", haverá uma opção "Disponibilizar para Evento?".
-3.  **Controle de Status:** Botões para "Abrir Inscrições", "Iniciar Evento" (libera quizzes para jogar), "Encerrar".
+## 3. Arquivos Chave Criados/Modificados
+- `src/app/events/page.tsx`: Listagem e Criação.
+- `src/app/events/[id]/page.tsx`: Detalhes, Inscrição e Gestão.
+- `src/app/events/[id]/ranking/page.tsx`: Tela de Ranking.
+- `src/app/quiz/page.tsx`: Visualização condicional de quizzes de evento.
+- `firestore.rules`: Regras de segurança para coleções `events` e `event_registrations`.
 
-### B. Painel do Coordenador de Base (Inscrição)
-1.  **Listar Eventos:** Vê eventos com status "open".
-2.  **Inscrever Membros:**
-    - Ao clicar num evento, abre uma lista com todos os membros da sua base.
-    - Seleção múltipla (Checkbox) dos alunos que irão participar.
-    - Botão "Salvar Inscrições".
-3.  **Visualizar Inscritos:** Vê quem já está confirmado.
-
-### C. Experiência do Participante (Quiz)
-1.  Os quizzes vinculados a um evento **só aparecem** na lista de quizzes do aluno se:
-    - O evento estiver com status `active`.
-    - O aluno possuir um registro em `event_registrations` para aquele evento.
-2.  Ao jogar, a pontuação segue a regra padrão (XP no perfil + Histórico).
-
-## 4. Etapas de Desenvolvimento
-1.  **Criar Página de Eventos (`/events`):**
-    - Listagem de eventos.
-    - Modal de criação (para Admin/Geral).
-2.  **Criar Página de Gerenciamento (`/events/[id]`):**
-    - Para Coord. Geral: Edição, Mudança de Status, Vinculação de Quizzes.
-    - Para Coord. Base: Lista de Membros com Checkbox para inscrição.
-3.  **Atualizar Models e Hooks:**
-    - Garantir que `master_quizzes` suporte o vínculo.
-4.  **Atualizar Player de Quiz:**
-    - Filtrar visibilidade baseado na inscrição.
+## 4. Próximos Passos (Sugestões Futuras)
+- Geração de Certificados em PDF.
+- Check-in presencial via QR Code.
