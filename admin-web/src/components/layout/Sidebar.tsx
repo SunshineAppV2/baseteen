@@ -161,7 +161,7 @@ export default function Sidebar() {
                     icon: Calendar,
                     label: "Eventos",
                     href: "/events",
-                    visible: ['master', 'admin', 'secretaria', 'coord_geral', 'coord_base'].includes(user?.role || '')
+                    visible: ['master', 'admin', 'secretaria', 'coord_geral', 'coord_base', 'coord_distrital', 'coord_regiao', 'coord_associacao', 'coord_uniao'].includes(user?.role || '')
                 },
                 {
                     icon: CalendarCheck,
