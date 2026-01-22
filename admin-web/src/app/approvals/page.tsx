@@ -67,6 +67,18 @@ export default function ApprovalsPage() {
             return []; // All (sort client side)
         }
 
+        if (currentUser.role === 'coord_uniao' && currentUser.unionId) {
+            return [where('unionId', '==', currentUser.unionId)];
+        }
+
+        if (currentUser.role === 'coord_associacao' && currentUser.associationId) {
+            return [where('associationId', '==', currentUser.associationId)];
+        }
+
+        if (currentUser.role === 'coord_regiao' && currentUser.regionId) {
+            return [where('regionId', '==', currentUser.regionId)];
+        }
+
         if (currentUser.role === 'coord_distrital' && currentUser.districtId) {
             return [
                 where('districtId', '==', currentUser.districtId)
