@@ -151,9 +151,11 @@ export default function RankingPage() {
             setFilterDistrict(currentUser.districtId);
         }
         if (currentUser?.role === 'coord_base' && currentUser.baseId) {
-            // Find district of this base to set district filter too, or just set base
-            // Setting base is enough if the logic handles it.
             setFilterBase(currentUser.baseId);
+            // Hide other filters or lock them?
+            // Since data is already constrained by Firestore query (userConstraints), 
+            // the client-side filter `filterBase` just needs to match or be "all" (which is effectively their base).
+            // But setting it explicitly is good UI.
         }
     }, [currentUser]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -253,15 +255,17 @@ export default function RankingPage() {
                     >
                         Rankings de Eventos
                     </button>
-                    <button
-                        onClick={() => setActiveTab("bases")}
-                        className={clsx(
-                            "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                            activeTab === "bases" ? "bg-white text-primary shadow-sm" : "text-gray-500 hover:text-gray-700"
-                        )}
-                    >
-                        Ranking de Bases
-                    </button>
+                    {currentUser?.role !== 'coord_base' && (
+                        <button
+                            onClick={() => setActiveTab("bases")}
+                            className={clsx(
+                                "px-6 py-2 rounded-lg text-sm font-bold transition-all",
+                                activeTab === "bases" ? "bg-white text-primary shadow-sm" : "text-gray-500 hover:text-gray-700"
+                            )}
+                        >
+                            Ranking de Bases
+                        </button>
+                    )}
                 </div>
             </div>
 
