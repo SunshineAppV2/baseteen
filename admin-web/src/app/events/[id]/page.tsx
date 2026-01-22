@@ -259,30 +259,92 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     if (!event) return <div className="p-8 text-center animate-pulse">Carregando evento...</div>;
 
     const linkedQuizzesList = allQuizzes.filter(q => event.linkedQuizzes?.includes(q.id));
-    const availableQuizzes = allQuizzes.filter(q => !event.linkedQuizzes?.includes(q.id));
+    const availableQuizzes = allQuizzes.filter(q =>
+        !event.linkedQuizzes?.includes(q.id) && (q as any).availableForEvents === true
+    );
 
     return (
         <div className="max-w-5xl mx-auto pb-20 space-y-8 animate-fade-in relative">
             {/* Header */}
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" onClick={() => router.back()} className="rounded-full h-12 w-12 p-0 bg-white shadow-sm border border-gray-100">
-                    <ArrowLeft className="text-gray-600" />
-                </Button>
-                <div>
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-3xl font-black text-gray-900">{event.title}</h1>
-                        <span className={clsx(
-                            "px-2 py-0.5 rounded-full text-[10px] uppercase font-black tracking-widest border",
-                            event.status === 'active' ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
-                        )}>
-                            {event.status === 'active' ? "ATIVO" : "AGENDADO"}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-gray-500 font-medium mt-1">
-                        <span className="flex items-center gap-1.5"><Calendar size={16} /> {event.date?.toDate().toLocaleDateString('pt-BR')}</span>
-                        {event.location && <span className="flex items-center gap-1.5"><MapPin size={16} /> {event.location}</span>}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" onClick={() => router.back()} className="rounded-full h-12 w-12 p-0 bg-white shadow-sm border border-gray-100">
+                        <ArrowLeft className="text-gray-600" />
+                    </Button>
+                    <div>
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-3xl font-black text-gray-900">{event.title}</h1>
+                            <span className={clsx(
+                                "px-2 py-0.5 rounded-full text-[10px] uppercase font-black tracking-widest border",
+                                event.status === 'active' ? "bg-green-100 text-green-700 border-green-200" :
+                                    event.status === 'open' ? "bg-blue-100 text-blue-700 border-blue-200" :
+                                        event.status === 'finished' ? "bg-gray-100 text-gray-700 border-gray-200" :
+                                            "bg-yellow-100 text-yellow-700 border-yellow-200"
+                            )}>
+                                {event.status === 'active' ? "EM ANDAMENTO" :
+                                    event.status === 'open' ? "INSCRIÇÕES ABERTAS" :
+                                        event.status === 'finished' ? "ENCERRADO" : "RASCUNHO"}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-gray-500 font-medium mt-1">
+                            <span className="flex items-center gap-1.5"><Calendar size={16} /> {event.date?.toDate().toLocaleDateString('pt-BR')}</span>
+                            {event.location && <span className="flex items-center gap-1.5"><MapPin size={16} /> {event.location}</span>}
+                        </div>
                     </div>
                 </div>
+
+                {/* Manager Actions: Status Control */}
+                {isManager && (
+                    <div className="flex items-center gap-2">
+                        {event.status === 'draft' && (
+                            <Button
+                                className="bg-blue-600 hover:bg-blue-700 text-white gap-2 rounded-xl shadow-lg shadow-blue-600/20"
+                                onClick={async () => {
+                                    if (!confirm("Ao abrir inscrições, os coordenadores de base poderão inscrever seus membros. Continuar?")) return;
+                                    await updateDoc(doc(db, "events", eventId), { status: 'open' });
+                                }}
+                            >
+                                <CheckCircle2 size={18} /> ABRIR INSCRIÇÕES
+                            </Button>
+                        )}
+
+                        {event.status === 'open' && (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    className="gap-2 rounded-xl text-yellow-600 hover:bg-yellow-50 border-yellow-200"
+                                    onClick={async () => {
+                                        if (!confirm("Isso voltará o evento para Rascunho e fechará as inscrições. Continuar?")) return;
+                                        await updateDoc(doc(db, "events", eventId), { status: 'draft' });
+                                    }}
+                                >
+                                    Pausar Inscrições
+                                </Button>
+                                <Button
+                                    className="bg-green-600 hover:bg-green-700 text-white gap-2 rounded-xl shadow-lg shadow-green-600/20"
+                                    onClick={async () => {
+                                        if (!confirm("INICIAR EVENTO: Isso disponibilizará os quizzes vinculados para todos os alunos inscritos. Certifique-se de que os quizzes estão prontos. Continuar?")) return;
+                                        await updateDoc(doc(db, "events", eventId), { status: 'active' });
+                                    }}
+                                >
+                                    <Gamepad size={18} /> INICIAR EVENTO
+                                </Button>
+                            </>
+                        )}
+
+                        {event.status === 'active' && (
+                            <Button
+                                className="bg-gray-800 hover:bg-black text-white gap-2 rounded-xl shadow-lg"
+                                onClick={async () => {
+                                    if (!confirm("ENCERRAR EVENTO: Os alunos não poderão mais acessar os quizzes deste evento. Continuar?")) return;
+                                    await updateDoc(doc(db, "events", eventId), { status: 'finished' });
+                                }}
+                            >
+                                <CheckCircle2 size={18} /> ENCERRAR EVENTO
+                            </Button>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* BASE COORDINATOR VIEW */}

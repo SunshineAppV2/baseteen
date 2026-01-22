@@ -393,6 +393,7 @@ export default function QuizManagementPage() {
                 description: formData.description,
                 questions: normalizedQuestions, // Use normalized questions
                 availableToStudents: formData.availableToStudents,
+                availableForEvents: (formData as any).availableForEvents || false, // NEW FIELD
                 classification: formData.classification,
                 updatedAt: new Date()
             };
@@ -1064,7 +1065,61 @@ export default function QuizManagementPage() {
                     <Gamepad size={200} className="absolute -right-10 -bottom-10 text-white/10 rotate-12" />
                 </div>
 
-                {/* List for Members */}
+                {/* --- EVENT QUIZZES SECTION (New) --- */}
+                {eventQuizzes.length > 0 && (
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3">
+                            <Calendar className="text-red-500" size={24} />
+                            <h2 className="text-xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">
+                                Quizzes de Eventos Ativos
+                            </h2>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {eventQuizzes.map((quiz) => (
+                                <div
+                                    key={quiz.id}
+                                    className="group relative bg-white rounded-[32px] p-8 border-2 border-red-100 ring-4 ring-red-50 hover:shadow-[0_20px_50px_rgba(239,68,68,0.15)] transition-all duration-500 cursor-default overflow-hidden"
+                                >
+                                    <div className="absolute top-4 right-4 z-20">
+                                        <span className="bg-red-500 text-white text-[10px] uppercase font-black px-3 py-1 rounded-full shadow-lg shadow-red-500/30 animate-pulse">
+                                            Evento
+                                        </span>
+                                    </div>
+
+                                    {/* Background Accent */}
+                                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-500/5 rounded-full group-hover:scale-150 transition-transform duration-700" />
+
+                                    <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-red-500/10 to-red-500/5 rounded-2xl flex items-center justify-center text-red-600 mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
+                                        <Award size={32} />
+                                    </div>
+
+                                    <div className="relative z-10">
+                                        <h3 className="font-black text-2xl mb-2 text-gray-900 tracking-tight group-hover:text-red-600 transition-colors">{quiz.title}</h3>
+                                        <p className="text-sm text-text-secondary line-clamp-2 mb-8 font-medium">
+                                            Quiz exclusivo do evento. Complete para ganhar XP bônus!
+                                        </p>
+
+                                        <div className="flex items-center justify-between pt-6 border-t border-gray-50">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recompensa</span>
+                                                <span className="font-black text-red-600 italic">Até {quiz.questions.reduce((acc: number, q: any) => acc + (q.xpValue || 0), 0)} XP</span>
+                                            </div>
+                                            <Button
+                                                onClick={() => setPlayingIndividualQuiz(quiz)}
+                                                className="bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-2xl px-6 py-5 font-black text-sm shadow-lg shadow-red-500/20 hover:scale-105 transition-all"
+                                            >
+                                                JOGAR AGORA
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* List for Regular Quizzes */}
                 <div className="space-y-6">
                     <div className="flex items-center gap-3">
                         <LayoutList className="text-primary" size={24} />
@@ -1833,20 +1888,40 @@ export default function QuizManagementPage() {
                                         />
                                     </div>
 
-                                    {/* Opção de Visibilidade para Alunos */}
-                                    {(user?.role === 'coord_base' || user?.role === 'master' || user?.role === 'admin') && (
-                                        <div className="md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-4">
-                                            <input
-                                                type="checkbox"
-                                                id="availableToStudents"
-                                                className="w-5 h-5 text-primary rounded focus:ring-primary"
-                                                checked={formData.availableToStudents}
-                                                onChange={e => setFormData({ ...formData, availableToStudents: e.target.checked })}
-                                            />
-                                            <label htmlFor="availableToStudents" className="cursor-pointer">
-                                                <span className="block font-bold text-gray-900">Disponibilizar para Alunos da Base?</span>
-                                                <span className="text-sm text-text-secondary">Se marcado, os alunos da sua base verão este quiz na lista de atividades.</span>
-                                            </label>
+                                    {/* Opção de Visibilidade para Alunos e Eventos */}
+                                    {(user?.role === 'coord_base' || user?.role === 'master' || user?.role === 'admin' || user?.role === 'coord_geral' || user?.role === 'secretaria') && (
+                                        <div className="md:col-span-2 space-y-3">
+                                            {/* Estudantes da Base */}
+                                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-4">
+                                                <input
+                                                    type="checkbox"
+                                                    id="availableToStudents"
+                                                    className="w-5 h-5 text-primary rounded focus:ring-primary"
+                                                    checked={formData.availableToStudents}
+                                                    onChange={e => setFormData({ ...formData, availableToStudents: e.target.checked })}
+                                                />
+                                                <label htmlFor="availableToStudents" className="cursor-pointer">
+                                                    <span className="block font-bold text-gray-900">Disponibilizar para Alunos da Base?</span>
+                                                    <span className="text-sm text-text-secondary">Se marcado, os alunos da sua base verão este quiz na lista de atividades.</span>
+                                                </label>
+                                            </div>
+
+                                            {/* Disponível para Eventos (Apenas Gestores Gerais) */}
+                                            {['master', 'admin', 'coord_geral', 'secretaria'].includes(user?.role || '') && (
+                                                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="availableForEvents"
+                                                        className="w-5 h-5 text-purple-600 rounded focus:ring-purple-600"
+                                                        checked={(formData as any).availableForEvents || false}
+                                                        onChange={e => setFormData({ ...formData, availableForEvents: e.target.checked } as any)}
+                                                    />
+                                                    <label htmlFor="availableForEvents" className="cursor-pointer">
+                                                        <span className="block font-bold text-purple-900">Disponibilizar para Evento?</span>
+                                                        <span className="text-sm text-purple-700">Se marcado, aparecerá na lista de quizzes para vincular aos eventos.</span>
+                                                    </label>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
