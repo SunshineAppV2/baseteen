@@ -479,7 +479,7 @@ export default function DashboardPage() {
                                                 {districts.find(d => d.id === u.districtId)?.name || 'Sem Distrito'}
                                             </span>
                                         </div>
-                                        <span className="text-sm font-bold text-primary">{u.stats?.currentXp || 0} XP</span>
+                                        <span className="text-sm font-bold text-primary">{currentUser?.role !== 'membro' ? `${u.stats?.currentXp || 0} XP` : ''}</span>
                                     </div>
                                 </div>
                             ))}

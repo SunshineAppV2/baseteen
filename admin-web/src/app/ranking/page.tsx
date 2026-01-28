@@ -346,7 +346,7 @@ export default function RankingPage() {
                                 </div>
                                 <h3 className="font-bold text-gray-800 text-center truncate w-full">{rankedUsers[1].displayName}</h3>
                                 <p className="text-xs text-gray-500 mb-2">{getBaseName(rankedUsers[1].baseId)}</p>
-                                <div className="text-2xl font-black text-gray-400">{rankedUsers[1].stats?.currentXp || 0} Pontos</div>
+                                <div className="text-2xl font-black text-gray-400">{currentUser?.role !== 'membro' ? `${rankedUsers[1].stats?.currentXp || 0} Pontos` : '******'}</div>
                             </div>
 
                             {/* 1st Place */}
@@ -370,7 +370,7 @@ export default function RankingPage() {
                                 </div>
                                 <h3 className="text-lg font-bold text-gray-800 text-center truncate w-full">{rankedUsers[0].displayName}</h3>
                                 <p className="text-sm text-gray-500 mb-2">{getBaseName(rankedUsers[0].baseId)}</p>
-                                <div className="text-3xl font-black text-yellow-500">{rankedUsers[0].stats?.currentXp || 0} Pontos</div>
+                                <div className="text-3xl font-black text-yellow-500">{currentUser?.role !== 'membro' ? `${rankedUsers[0].stats?.currentXp || 0} Pontos` : '******'}</div>
                             </div>
 
                             {/* 3rd Place */}
@@ -393,7 +393,7 @@ export default function RankingPage() {
                                 </div>
                                 <h3 className="font-bold text-gray-800 text-center truncate w-full">{rankedUsers[2].displayName}</h3>
                                 <p className="text-xs text-gray-500 mb-2">{getBaseName(rankedUsers[2].baseId)}</p>
-                                <div className="text-2xl font-black text-amber-700">{rankedUsers[2].stats?.currentXp || 0} Pontos</div>
+                                <div className="text-2xl font-black text-amber-700">{currentUser?.role !== 'membro' ? `${rankedUsers[2].stats?.currentXp || 0} Pontos` : '******'}</div>
                             </div>
                         </div>
                     )}
@@ -463,7 +463,7 @@ export default function RankingPage() {
                                                 </span>
                                             </td>
                                             <td className="p-4 text-right font-mono font-bold text-primary text-lg">
-                                                {user.stats?.currentXp || 0}
+                                                {currentUser?.role !== 'membro' ? (user.stats?.currentXp || 0) : '******'}
                                             </td>
                                         </tr>
                                     ))

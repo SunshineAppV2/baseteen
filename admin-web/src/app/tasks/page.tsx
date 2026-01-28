@@ -312,8 +312,8 @@ export default function TasksPage() {
                 points: Number(formData.points),
                 xpReward: Number(formData.points),
                 updatedAt: new Date(),
-                startDate: formData.startDate ? new Date(`${formData.startDate}T00:01:00`).toISOString() : null,
-                deadline: formData.deadline ? new Date(`${formData.deadline}T23:59:59`).toISOString() : null,
+                startDate: formData.startDate ? new Date(`${formData.startDate}T04:00:00`).toISOString() : null,
+                deadline: formData.deadline ? new Date(`${formData.deadline}T23:00:00`).toISOString() : null,
                 classification: formData.classification,
                 isBaseCollective: formData.isBaseCollective || false,
                 targetBaseType: formData.targetBaseType,
@@ -467,8 +467,8 @@ export default function TasksPage() {
                         return new Date(`${val}T${time}`).toISOString();
                     };
 
-                    if (parts[4]) finalStartDate = parseDate(parts[4], "09:00:00");
-                    if (parts[5]) finalDeadline = parseDate(parts[5], "21:00:00");
+                    if (parts[4]) finalStartDate = parseDate(parts[4], "04:00:00");
+                    if (parts[5]) finalDeadline = parseDate(parts[5], "23:00:00");
 
                     // Fallback: if only one date provided in parts[2] or parts[6]
                     if (parts.length === 3 && parts[2].includes("/")) {
@@ -1120,7 +1120,7 @@ export default function TasksPage() {
                                             }
 
                                             if (bulkFormData.clearDeadline) updates.deadline = null;
-                                            else if (bulkFormData.deadline) updates.deadline = new Date(`${bulkFormData.deadline}T23:59:59`).toISOString();
+                                            else if (bulkFormData.deadline) updates.deadline = new Date(`${bulkFormData.deadline}T23:00:00`).toISOString();
 
                                             if (Object.keys(updates).length === 0) {
                                                 alert("Nenhuma alteração definida.");
