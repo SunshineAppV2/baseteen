@@ -136,6 +136,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const [loadingMembers, setLoadingMembers] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+    const [showIndividualRegistration, setShowIndividualRegistration] = useState(false);
 
     // Tasks State
     const { data: eventTasks, loading: loadingTasks } = useCollection<EventTask>("tasks", [where("eventId", "==", eventId)]);
