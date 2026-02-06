@@ -139,7 +139,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         title: "",
         description: "",
         points: 0,
-        points: 0,
+
         type: "text",
         deadline: "",
         releaseDate: ""
