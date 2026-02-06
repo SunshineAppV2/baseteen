@@ -91,8 +91,9 @@ interface EventTask {
     title: string;
     description: string;
     points: number;
-    type: "upload" | "text" | "check" | "link";
+    type: "upload" | "text" | "check" | "link" | "text_link";
     deadline?: string;
+    releaseDate?: string;
 }
 
 interface BaseSubmission {
@@ -137,8 +138,10 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         title: "",
         description: "",
         points: 0,
+        points: 0,
         type: "text",
-        deadline: ""
+        deadline: "",
+        releaseDate: ""
     });
 
     // Base Submission State
@@ -356,7 +359,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             }
             setIsTaskModalOpen(false);
             setEditingTask(null);
-            setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
+            setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "", releaseDate: "" });
         } catch (error) {
             console.error(error);
             alert("Erro ao salvar desafio.");
@@ -486,6 +489,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             else if (selectedTaskForSubmission.type === 'text') proofContent = submissionData.text;
             else if (selectedTaskForSubmission.type === 'upload') proofContent = submissionData.link;
             else if (selectedTaskForSubmission.type === 'link') proofContent = submissionData.link;
+            else if (selectedTaskForSubmission.type === 'text_link') proofContent = `Texto: ${submissionData.text} \nLink: ${submissionData.link}`;
 
             // Fetch correct base name for the coordinator (reuse previous logic or fetch again)
             let coordinatorBaseName = "Base " + user.baseId!.substring(0, 5);
@@ -747,6 +751,24 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     const submission = mySubmissions.find(s => s.taskId === task.id);
                                     const status = submission?.status;
 
+                                    // Date Logic
+                                    const now = new Date();
+                                    const releaseDate = task.releaseDate ? new Date(task.releaseDate + 'T00:00:00') : null;
+                                    const deadline = task.deadline ? new Date(task.deadline + 'T23:59:59') : null;
+
+                                    // Visibility Check (Release Date)
+                                    if (releaseDate && now < releaseDate) {
+                                        return (
+                                            <div key={task.id} className="bg-gray-50 p-6 rounded-2xl border-2 border-dashed border-gray-200 opacity-60 flex flex-col items-center justify-center text-center gap-2">
+                                                <Clock size={24} className="text-gray-400" />
+                                                <p className="font-bold text-gray-400">Desafio Bloqueado</p>
+                                                <p className="text-xs text-gray-400 uppercase tracking-widest">Disponível em {releaseDate.toLocaleDateString('pt-BR')}</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    const isExpired = deadline && now > deadline;
+
                                     return (
                                         <div key={task.id} className={clsx(
                                             "bg-white p-6 rounded-2xl border-2 transition-all relative overflow-hidden",
@@ -779,8 +801,8 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                                 )}
 
                                                 {!status || status === 'rejected' ? (
-                                                    <Button size="sm" onClick={() => setSelectedTaskForSubmission(task)}>
-                                                        {status === 'rejected' ? "Tentar Novamente" : "Enviar Resposta"}
+                                                    <Button size="sm" onClick={() => setSelectedTaskForSubmission(task)} disabled={isExpired && !status}>
+                                                        {isExpired ? "Encerrado" : status === 'rejected' ? "Tentar Novamente" : "Enviar Resposta"}
                                                     </Button>
                                                 ) : <div />}
                                             </div>
@@ -1090,6 +1112,30 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     </div>
                                 )}
 
+                                {selectedTaskForSubmission.type === 'text_link' && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-500 mb-2">Resposta em Texto</label>
+                                            <textarea
+                                                className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                rows={3}
+                                                value={submissionData.text}
+                                                onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-500 mb-2">Link Complementar</label>
+                                            <input
+                                                type="url"
+                                                className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                placeholder="https://..."
+                                                value={submissionData.link}
+                                                onChange={e => setSubmissionData({ ...submissionData, link: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
                                 {selectedTaskForSubmission.type === 'upload' && (
                                     <div className="space-y-3">
                                         <label className="block text-sm font-bold text-gray-500 mb-2">Anexo</label>
@@ -1181,63 +1227,81 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                             onChange={e => setTaskFormData({ ...taskFormData, type: e.target.value as any })}
                                         >
                                             <option value="text">Texto</option>
+                                            <option value="text_link">Texto + Link</option>
                                             <option value="upload">Upload (Foto/PDF)</option>
                                             <option value="link">Link</option>
                                             <option value="check">Apenas Marcar</option>
                                         </select>
                                     </div>
                                 </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Liberação (Opcional)</label>
+                                    <input
+                                        type="date"
+                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
+                                        value={taskFormData.releaseDate || ''}
+                                        onChange={e => setTaskFormData({ ...taskFormData, releaseDate: e.target.value })}
+                                    />
+                                </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo (Opcional)</label>
                                     <input
                                         type="date"
-                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50"
+                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
                                         value={taskFormData.deadline}
                                         onChange={e => setTaskFormData({ ...taskFormData, deadline: e.target.value })}
                                     />
                                 </div>
-
-                                <Button onClick={handleSaveTask} className="w-full py-4 text-lg font-bold rounded-xl shadow-lg mt-4" disabled={isSaving}>
-                                    {isSaving ? "Salvando..." : "Salvar Desafio"}
-                                </Button>
                             </div>
-                        </div>
-                    </div>
-                )
-            }
-            {/* Manual Quiz Player Modal */}
-            {manualQuizData.isOpen && manualQuizData.quizId && (
-                <IndividualQuizPlayer
-                    quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
-                    userId={manualQuizData.userId}
-                    onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
-                />
-            )}
 
-            {/* Quiz Selection Modal (if needed for manual start) */}
-            {manualQuizData.isOpen && !manualQuizData.quizId && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
-                            <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="space-y-2">
-                            {availableQuizzes.map(q => (
-                                <button
-                                    key={q.id}
-                                    onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
-                                    className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
-                                >
-                                    {q.title}
-                                </button>
-                            ))}
+                            <Button onClick={handleSaveTask} className="w-full py-4 text-lg font-bold rounded-xl shadow-lg mt-4" disabled={isSaving}>
+                                {isSaving ? "Salvando..." : "Salvar Desafio"}
+                            </Button>
                         </div>
                     </div>
                 </div>
-            )}
+    )
+}
+
+{/* Manual Quiz Player Modal */ }
+{
+    manualQuizData.isOpen && manualQuizData.quizId && (
+        <IndividualQuizPlayer
+            quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
+            userId={manualQuizData.userId}
+            onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
+        />
+    )
+}
+
+{/* Quiz Selection Modal (if needed for manual start) */ }
+{
+    manualQuizData.isOpen && !manualQuizData.quizId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
+                    <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
+                        <X size={20} />
+                    </button>
+                </div>
+                <div className="space-y-2">
+                    {availableQuizzes.map(q => (
+                        <button
+                            key={q.id}
+                            onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
+                            className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
+                        >
+                            {q.title}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    )
+}
         </div >
     );
 }
