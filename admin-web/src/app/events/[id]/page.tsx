@@ -91,7 +91,7 @@ interface EventTask {
     title: string;
     description: string;
     points: number;
-    type: "upload" | "text" | "check" | "link" | "text_link";
+    type: "upload" | "text" | "check" | "link" | "text_link" | "text_upload";
     deadline?: string;
     releaseDate?: string;
 }
@@ -490,6 +490,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             else if (selectedTaskForSubmission.type === 'upload') proofContent = submissionData.link;
             else if (selectedTaskForSubmission.type === 'link') proofContent = submissionData.link;
             else if (selectedTaskForSubmission.type === 'text_link') proofContent = `Texto: ${submissionData.text} \nLink: ${submissionData.link}`;
+            else if (selectedTaskForSubmission.type === 'text_upload') proofContent = `Texto: ${submissionData.text} \nArquivo: ${submissionData.link}`;
 
             // Fetch correct base name for the coordinator (reuse previous logic or fetch again)
             let coordinatorBaseName = "Base " + user.baseId!.substring(0, 5);
@@ -1136,6 +1137,49 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     </div>
                                 )}
 
+                                {selectedTaskForSubmission.type === 'text_upload' && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-500 mb-2">Resposta em Texto</label>
+                                            <textarea
+                                                className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                rows={3}
+                                                value={submissionData.text}
+                                                onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="block text-sm font-bold text-gray-500 mb-2">Anexo (Imagem/PDF)</label>
+                                            {!submissionData.link ? (
+                                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors">
+                                                    {isUploading ? (
+                                                        <div className="flex flex-col items-center gap-2 text-primary">
+                                                            <Loader2 className="animate-spin" size={24} />
+                                                            <span className="text-sm font-medium">Enviando...</span>
+                                                        </div>
+                                                    ) : (
+                                                        <label className="cursor-pointer flex flex-col items-center gap-2">
+                                                            <UploadCloud className="text-gray-400" size={32} />
+                                                            <span className="text-sm font-medium text-gray-700">Clique para selecionar</span>
+                                                            <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,video/*,application/pdf" />
+                                                        </label>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <CheckCircle2 size={16} className="text-green-600" />
+                                                        <span className="text-xs text-green-700 truncate underline">{submissionData.link}</span>
+                                                    </div>
+                                                    <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="p-1 hover:bg-green-100 rounded-full">
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {selectedTaskForSubmission.type === 'upload' && (
                                     <div className="space-y-3">
                                         <label className="block text-sm font-bold text-gray-500 mb-2">Anexo</label>
@@ -1228,6 +1272,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                         >
                                             <option value="text">Texto</option>
                                             <option value="text_link">Texto + Link</option>
+                                            <option value="text_upload">Texto + Upload</option>
                                             <option value="upload">Upload (Foto/PDF)</option>
                                             <option value="link">Link</option>
                                             <option value="check">Apenas Marcar</option>
