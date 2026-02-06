@@ -194,27 +194,12 @@ export default function Sidebar() {
                     visible: user?.role === 'master' || user?.role === 'admin' || config.achievementsVisibleToBases
                 },
                 {
-                    icon: Target,
-                    label: "ROTA GA",
-                    href: "/rota-ga",
-                    visible: (
-                        user?.role === 'master' ||
-                        user?.role === 'admin' ||
-                        (config.rotaGAEnabled && ['coord_base', 'coord_distrital', 'coord_regiao', 'coord_associacao', 'coord_uniao', 'coord_geral', 'secretaria'].includes(user?.role || ''))
-                    )
-                },
-                {
                     icon: ClipboardList,
                     label: "Aprovar Membros",
                     href: "/approvals",
                     visible: ['coord_base', 'coord_distrital', 'coord_regiao', 'coord_associacao', 'coord_uniao', 'coord_geral', 'master', 'admin', 'secretaria'].includes(user?.role || '')
                 },
-                {
-                    icon: ClipboardList,
-                    label: "Aprovações GA",
-                    href: "/aprovacoes-ga",
-                    visible: ['coord_distrital', 'coord_regiao', 'coord_associacao', 'coord_uniao', 'coord_geral', 'master', 'admin', 'secretaria'].includes(user?.role || '')
-                },
+
                 {
                     icon: BarChart3,
                     label: "Relatórios",

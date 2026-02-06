@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useCollection, firestoreService } from "@/hooks/useFirestore";
+import { auth } from "@/services/firebase"; // Added auth
 import { Button } from "@/components/ui/Button";
 import {
     Calendar,
@@ -18,7 +19,13 @@ import {
     Gamepad,
     Link as LinkIcon,
     X,
-    AlertCircle
+    AlertCircle,
+    UploadCloud, // Added
+    FileText, // Added
+    Edit3,
+    Target, // Added
+    Loader2, // Added
+    Heart // New
 } from "lucide-react";
 import {
     collection,
@@ -33,10 +40,16 @@ import {
     writeBatch,
     updateDoc,
     arrayUnion,
-    arrayRemove
+    arrayRemove,
+    limit,
+    orderBy,
+    DocumentData
 } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { toast } from "react-hot-toast";
+import IndividualQuizPlayer from "@/app/quiz/IndividualQuizPlayer";
 import { clsx } from "clsx";
 
 interface Event {
@@ -71,6 +84,30 @@ interface MasterQuiz {
     questions?: any[];
 }
 
+interface EventTask {
+    id: string;
+    eventId: string;
+    title: string;
+    description: string;
+    points: number;
+    type: "upload" | "text" | "check" | "link";
+    deadline?: string;
+}
+
+interface BaseSubmission {
+    id: string;
+    taskId: string;
+    baseId: string;
+    baseName: string;
+    status: 'pending' | 'approved' | 'rejected';
+    proof: {
+        content: string;
+        submittedAt: any;
+    };
+    xpReward: number;
+    eventId: string;
+}
+
 export default function EventDetailsPage({ params }: { params: Promise<{ id: string }> }) {
     const { id: eventId } = use(params);
     const router = useRouter();
@@ -90,6 +127,29 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const [loadingMembers, setLoadingMembers] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+
+    // Tasks State
+    const { data: eventTasks, loading: loadingTasks } = useCollection<EventTask>("tasks", [where("eventId", "==", eventId)]);
+    const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+    const [editingTask, setEditingTask] = useState<EventTask | null>(null);
+    const [taskFormData, setTaskFormData] = useState<Partial<EventTask>>({
+        title: "",
+        description: "",
+        points: 0,
+        type: "text",
+        deadline: ""
+    });
+
+    // Base Submission State
+    const { data: mySubmissions } = useCollection<BaseSubmission>("base_submissions",
+        user?.baseId ? [where("baseId", "==", user.baseId), where("eventId", "==", eventId)] : []
+    );
+    const { data: allSubmissions } = useCollection<BaseSubmission>("base_submissions",
+        isManager ? [where("eventId", "==", eventId)] : []
+    );
+    const [selectedTaskForSubmission, setSelectedTaskForSubmission] = useState<EventTask | null>(null);
+    const [submissionData, setSubmissionData] = useState({ text: "", link: "", completed: false });
+    const [isUploading, setIsUploading] = useState(false);
 
     // Manager State
     const [totalRegistrations, setTotalRegistrations] = useState(0);
@@ -274,9 +334,198 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         setSelectedUsers(newSet);
     };
 
+    // Task Management Logic
+    const handleSaveTask = async () => {
+        if (!taskFormData.title || !taskFormData.points) return alert("Preencha título e pontos!");
+        setIsSaving(true);
+        try {
+            const payload = {
+                ...taskFormData,
+                eventId,
+                updatedAt: serverTimestamp()
+            };
+
+            if (editingTask) {
+                await firestoreService.update("tasks", editingTask.id, payload);
+            } else {
+                await firestoreService.add("tasks", {
+                    ...payload,
+                    createdAt: serverTimestamp()
+                });
+            }
+            setIsTaskModalOpen(false);
+            setEditingTask(null);
+            setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao salvar desafio.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDeleteTask = async (taskId: string) => {
+        if (!confirm("Excluir este desafio?")) return;
+        try {
+            await firestoreService.delete("tasks", taskId);
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao excluir.");
+        }
+    };
+
+    // Manual Quiz Input State
+    const [manualQuizData, setManualQuizData] = useState<{ isOpen: boolean; userId: string; quizId: string | null }>({
+        isOpen: false,
+        userId: "",
+        quizId: null
+    });
+
+    // Handle Manual Quiz Start
+    const handleStartManualQuiz = (userId: string) => {
+        // If there's only one quiz, open it directly
+        if (availableQuizzes.length === 1) {
+            setManualQuizData({
+                isOpen: true,
+                userId: userId,
+                quizId: availableQuizzes[0].id
+            });
+        } else if (availableQuizzes.length > 1) {
+            setManualQuizData({
+                isOpen: true,
+                userId: userId,
+                quizId: null // Triggers selection or opens directly if handled
+            });
+        } else {
+            alert("Nenhum quiz vinculado a este evento.");
+        }
+    };
+
+    // Approval Logic
+    const handleApproveSubmission = async (submission: BaseSubmission) => {
+        if (!confirm(`Aprovar envio de ${submission.baseName}?`)) return;
+        try {
+            await firestoreService.update("base_submissions", submission.id, {
+                status: 'approved',
+                reviewedAt: new Date(),
+                reviewedBy: user?.uid
+            });
+            // Credit XP to base (Optional: Implement transaction for base stats)
+            const { doc, updateDoc, increment } = await import("firebase/firestore");
+            const { db } = await import("@/services/firebase");
+            const baseRef = doc(db, "bases", submission.baseId);
+            await updateDoc(baseRef, { totalXp: increment(submission.xpReward || 0) });
+
+            alert("Aprovado!");
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao aprovar.");
+        }
+    };
+
+    const handleRejectSubmission = async (submission: BaseSubmission) => {
+        const reason = prompt("Motivo da reprovação:");
+        if (!reason) return;
+        try {
+            await firestoreService.update("base_submissions", submission.id, {
+                status: 'rejected',
+                reviewedAt: new Date(),
+                reviewedBy: user?.uid,
+                rejectionReason: reason
+            });
+            alert("Reprovado.");
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao reprovar.");
+        }
+    };
+
     const filteredMembers = baseMembers.filter(m =>
         m.displayName?.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // --- Submission Logic ---
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !auth.currentUser) return;
+
+        setIsUploading(true);
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const initRes = await fetch('/api/drive/upload', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size })
+            });
+
+            if (!initRes.ok) throw new Error("Falha ao iniciar upload");
+            const { uploadUrl } = await initRes.json();
+
+            const uploadRes = await fetch(uploadUrl, { method: 'PUT', body: file });
+            if (!uploadRes.ok) throw new Error("Falha no envio do arquivo");
+
+            const driveFile = await uploadRes.json();
+            const link = driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view?usp=sharing`;
+            setSubmissionData(prev => ({ ...prev, link }));
+
+        } catch (error: any) {
+            console.error(error);
+            alert("Erro ao fazer upload: " + error.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const handleSubmitProof = async () => {
+        if (!selectedTaskForSubmission || !user?.baseId) return;
+        setIsSaving(true);
+        try {
+            let proofContent = "";
+            if (selectedTaskForSubmission.type === 'check') proofContent = submissionData.completed ? "Marcado como concluído" : "Não concluído";
+            else if (selectedTaskForSubmission.type === 'text') proofContent = submissionData.text;
+            else if (selectedTaskForSubmission.type === 'upload') proofContent = submissionData.link;
+            else if (selectedTaskForSubmission.type === 'link') proofContent = submissionData.link;
+
+            // Fetch correct base name for the coordinator (reuse previous logic or fetch again)
+            let coordinatorBaseName = "Base " + user.baseId!.substring(0, 5);
+            // Optimistically stick with simple name or fetch if needed. Rely on context or user data for now.
+
+            await firestoreService.add("base_submissions", {
+                taskId: selectedTaskForSubmission.id,
+                eventId: eventId,
+                baseId: user.baseId,
+                baseName: user.baseName || coordinatorBaseName,
+                submittedBy: user.uid,
+                submittedByName: user.displayName || "Coordenador",
+                districtId: user.districtId,
+                regionId: user.regionId,
+                associationId: user.associationId,
+                proof: {
+                    content: proofContent,
+                    submittedAt: new Date()
+                },
+                status: 'pending',
+                xpReward: selectedTaskForSubmission.points,
+                createdAt: new Date(),
+                timeline: [{
+                    action: 'submitted',
+                    status: 'pending',
+                    at: new Date(),
+                    by: user.uid,
+                    note: proofContent
+                }]
+            });
+
+            alert("Resposta enviada com sucesso! Aguarde a aprovação.");
+            setSelectedTaskForSubmission(null);
+            setSubmissionData({ text: "", link: "", completed: false });
+        } catch (error: any) {
+            console.error(error);
+            alert("Erro ao enviar resposta: " + error.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     if (!event) return <div className="p-8 text-center animate-pulse">Carregando evento...</div>;
 
@@ -380,82 +629,159 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
             {/* BASE COORDINATOR VIEW */}
             {isBaseCoord && (
-                <div className="card-soft p-0 overflow-hidden border border-gray-100 shadow-xl bg-white rounded-3xl">
-                    <div className="p-6 bg-primary text-white flex justify-between items-center">
-                        <div>
-                            <h2 className="text-xl font-bold flex items-center gap-2">
-                                <Users size={24} /> Gerenciar Inscrições
-                            </h2>
-                            <p className="text-blue-100 text-sm">Selecione os membros que participarão deste evento.</p>
+                <div className="space-y-6">
+                    {/* ... (Existing Registration UI) ... */}
+                    <div className="card-soft p-0 overflow-hidden border border-gray-100 shadow-xl bg-white rounded-3xl">
+                        {/* ... existing header ... */}
+                        <div className="p-6 bg-primary text-white flex justify-between items-center">
+                            {/* ... */}
+                            <div>
+                                <h2 className="text-xl font-bold flex items-center gap-2">
+                                    <Users size={24} /> Gerenciar Inscrições
+                                </h2>
+                                <p className="text-blue-100 text-sm">Selecione os membros que participarão deste evento.</p>
+                            </div>
+                            <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
+                                <span className="block text-2xl font-black">{selectedUsers.size}</span>
+                                <span className="text-[10px] uppercase font-bold tracking-widest opacity-80">Confirmados</span>
+                            </div>
                         </div>
-                        <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
-                            <span className="block text-2xl font-black">{selectedUsers.size}</span>
-                            <span className="text-[10px] uppercase font-bold tracking-widest opacity-80">Confirmados</span>
-                        </div>
-                    </div>
 
-                    <div className="p-4 border-b border-gray-100 bg-gray-50 flex gap-4 items-center sticky top-0 z-10">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                            <input
-                                type="text"
-                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-primary/50"
-                                placeholder="Buscar membro..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                            />
+                        <div className="p-4 border-b border-gray-100 bg-gray-50 flex gap-4 items-center sticky top-0 z-10">
+                            {/* ... Search ... */}
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                <input
+                                    type="text"
+                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-primary/50"
+                                    placeholder="Buscar membro..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <Button variant="outline" onClick={() => handleSelectAll(true)} className="text-xs">Todos</Button>
+                                <Button variant="outline" onClick={() => handleSelectAll(false)} className="text-xs">Nenhum</Button>
+                            </div>
                         </div>
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => handleSelectAll(true)} className="text-xs">Todos</Button>
-                            <Button variant="outline" onClick={() => handleSelectAll(false)} className="text-xs">Nenhum</Button>
-                        </div>
-                    </div>
 
-                    <div className="max-h-[50vh] overflow-y-auto p-2">
-                        {loadingMembers ? (
-                            <div className="p-8 text-center text-gray-400">Carregando lista...</div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {filteredMembers.map(member => {
-                                    const isSelected = selectedUsers.has(member.id);
-                                    return (
-                                        <div
-                                            key={member.id}
-                                            onClick={() => toggleUser(member.id)}
-                                            className={clsx(
-                                                "p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all active:scale-[0.98]",
-                                                isSelected
-                                                    ? "bg-primary/5 border-primary/30"
-                                                    : "bg-white border-gray-100 hover:border-gray-200"
-                                            )}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={clsx(
-                                                    "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-colors",
-                                                    isSelected ? "bg-primary text-white" : "bg-gray-100 text-gray-400"
-                                                )}>
-                                                    {member.displayName.substring(0, 2).toUpperCase()}
+                        <div className="max-h-[50vh] overflow-y-auto p-2">
+                            {/* ... Members List ... */}
+                            {loadingMembers ? (
+                                <div className="p-8 text-center text-gray-400">Carregando lista...</div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {filteredMembers.map(member => {
+                                        const isSelected = selectedUsers.has(member.id);
+                                        return (
+                                            <div
+                                                key={member.id}
+                                                className={clsx(
+                                                    "p-3 rounded-xl border flex items-center justify-between transition-all active:scale-[0.98]",
+                                                    isSelected
+                                                        ? "bg-primary/5 border-primary/30"
+                                                        : "bg-white border-gray-100 hover:border-primary/30"
+                                                )}
+                                            >
+                                                <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleUser(member.id)}>
+                                                    <div className={clsx(
+                                                        "w-5 h-5 rounded-full border flex items-center justify-center transition-colors",
+                                                        isSelected ? "bg-primary border-primary" : "border-gray-300"
+                                                    )}>
+                                                        {isSelected && <CheckCircle2 size={12} className="text-white" />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-gray-800 text-sm">{member.displayName}</p>
+                                                        {member.email && <p className="text-[10px] text-gray-400">{member.email}</p>}
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className={clsx("font-bold text-sm", isSelected ? "text-primary" : "text-gray-700")}>
-                                                        {member.displayName}
-                                                    </p>
-                                                    <p className="text-[10px] text-gray-400 uppercase font-bold">{member.role || 'Membro'}</p>
-                                                </div>
+                                                {(isBaseCoord || isManager) && availableQuizzes.length > 0 && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleStartManualQuiz(member.id);
+                                                        }}
+                                                        className="h-8 w-8 p-0 rounded-full hover:bg-purple-100 text-purple-600"
+                                                        title="Responder Quiz Manualmente"
+                                                    >
+                                                        <Gamepad size={16} />
+                                                    </Button>
+                                                )}
                                             </div>
+                                        );
+                                    })}
+                                    {filteredMembers.length === 0 && (
+                                        <p className="col-span-2 text-center py-8 text-gray-400">Nenhum membro encontrado.</p>
+                                    )}
+                                </div>
+                            )
+                            }
+                        </div>
+                    </div>
 
-                                            <div className={clsx(
-                                                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
-                                                isSelected ? "bg-primary border-primary" : "border-gray-200"
-                                            )}>
-                                                {isSelected && <CheckCircle2 size={14} className="text-white" />}
+                    {/* BASE TASKS VIEW */}
+                    <div id="base-tasks-view" className="mt-8">
+                        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                            <Target className="text-primary" /> Desafios do Evento
+                        </h2>
+                        {eventTasks.length === 0 ? (
+                            <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-gray-200 text-gray-400">
+                                Nenhum desafio disponível.
+                            </div>
+                        ) : registrations.length === 0 ? (
+                            <div className="p-8 text-center bg-yellow-50 rounded-2xl border border-yellow-200">
+                                <AlertCircle className="mx-auto text-yellow-600 mb-4" size={48} />
+                                <h3 className="font-bold text-lg text-yellow-800">Inscrição Necessária</h3>
+                                <p className="text-yellow-700">Inscreva pelo menos um membro para visualizar e participar dos desafios.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {eventTasks.map(task => {
+                                    const submission = mySubmissions.find(s => s.taskId === task.id);
+                                    const status = submission?.status;
+
+                                    return (
+                                        <div key={task.id} className={clsx(
+                                            "bg-white p-6 rounded-2xl border-2 transition-all relative overflow-hidden",
+                                            status === 'approved' ? "border-green-500 bg-green-50" :
+                                                status === 'rejected' ? "border-red-500 bg-red-50" :
+                                                    status === 'pending' ? "border-yellow-500 bg-yellow-50" :
+                                                        "border-gray-100 hover:border-primary/50"
+                                        )}>
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <h3 className="font-bold text-lg">{task.title}</h3>
+                                                    <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 capitalize">{task.type}</span>
+                                                </div>
+                                                <span className="text-2xl font-black text-primary">{task.points} PTS</span>
+                                            </div>
+                                            <p className="text-sm text-gray-500 mb-6">{task.description}</p>
+
+                                            <div className="flex justify-between items-center">
+                                                {status ? (
+                                                    <span className={clsx(
+                                                        "px-3 py-1 rounded-full text-xs font-bold uppercase",
+                                                        status === 'approved' ? "bg-green-200 text-green-800" :
+                                                            status === 'rejected' ? "bg-red-200 text-red-800" :
+                                                                "bg-yellow-200 text-yellow-800"
+                                                    )}>
+                                                        {status === 'approved' ? "Aprovado" : status === 'rejected' ? "Reprovado" : "Pendente"}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">Não enviado</span>
+                                                )}
+
+                                                {!status || status === 'rejected' ? (
+                                                    <Button size="sm" onClick={() => setSelectedTaskForSubmission(task)}>
+                                                        {status === 'rejected' ? "Tentar Novamente" : "Enviar Resposta"}
+                                                    </Button>
+                                                ) : <div />}
                                             </div>
                                         </div>
                                     );
                                 })}
-                                {filteredMembers.length === 0 && (
-                                    <p className="col-span-2 text-center py-8 text-gray-400">Nenhum membro encontrado.</p>
-                                )}
                             </div>
                         )}
                     </div>
@@ -515,6 +841,103 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
 
+                    {/* TASKS MANAGEMENT (Manager View) */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                <Target size={20} /> Desafios / Requisitos
+                            </h3>
+                            <Button size="sm" onClick={() => {
+                                setEditingTask(null);
+                                setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
+                                setIsTaskModalOpen(true);
+                            }} className="gap-2">
+                                <Plus size={16} /> Novo Desafio
+                            </Button>
+                        </div>
+                        <div className="p-6">
+                            {eventTasks.length > 0 ? (
+                                <div className="space-y-3">
+                                    {eventTasks.map(task => (
+                                        <div key={task.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-1">
+                                                    <span className="font-bold text-gray-800">{task.title}</span>
+                                                    <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold">{task.points} PTS</span>
+                                                    <span className="text-xs text-gray-400 capitalize bg-gray-100 px-2 py-0.5 rounded">{task.type}</span>
+                                                </div>
+                                                <p className="text-sm text-gray-500 line-clamp-1">{task.description}</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button variant="ghost" size="sm" onClick={() => {
+                                                    setEditingTask(task);
+                                                    setTaskFormData(task);
+                                                    setIsTaskModalOpen(true);
+                                                }}>
+                                                    <Edit3 size={16} className="text-gray-400 hover:text-blue-500" />
+                                                </Button>
+                                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task.id)}>
+                                                    <Trash2 size={16} className="text-gray-400 hover:text-red-500" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
+                                    <Target size={32} className="mx-auto mb-2 opacity-50" />
+                                    <p>Nenhum desafio criado.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+
+
+                    {/* SUBMISSIONS REVIEW (Manager View) */}
+                    {
+                        allSubmissions.filter(s => s.status === 'pending').length > 0 && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                <div className="p-6 border-b border-gray-100 bg-orange-50 flex justify-between items-center">
+                                    <h3 className="font-bold text-lg text-orange-900 flex items-center gap-2">
+                                        <AlertCircle size={20} /> Aprovações Pendentes
+                                    </h3>
+                                    <span className="bg-orange-200 text-orange-800 px-3 py-1 rounded-full text-xs font-bold">
+                                        {allSubmissions.filter(s => s.status === 'pending').length}
+                                    </span>
+                                </div>
+                                <div className="p-6 space-y-3">
+                                    {allSubmissions.filter(s => s.status === 'pending').map(sub => {
+                                        const task = eventTasks.find(t => t.id === sub.taskId);
+                                        return (
+                                            <div key={sub.id} className="p-4 border border-orange-100 bg-orange-50/30 rounded-xl">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div>
+                                                        <p className="font-bold text-gray-800">{sub.baseName}</p>
+                                                        <p className="text-xs text-gray-500">{task?.title || 'Desafio desconhecido'}</p>
+                                                    </div>
+                                                    <span className="font-bold text-orange-600">{sub.xpReward} XP</span>
+                                                </div>
+                                                <div className="bg-white p-3 rounded border border-gray-100 text-sm text-gray-600 mb-3">
+                                                    <span className="font-bold text-xs uppercase text-gray-400 block mb-1">Evidência:</span>
+                                                    {sub.proof.content.startsWith('http') ? (
+                                                        <a href={sub.proof.content} target="_blank" className="text-blue-600 underline flex items-center gap-1">
+                                                            <LinkIcon size={12} /> Abrir Link / Arquivo
+                                                        </a>
+                                                    ) : sub.proof.content}
+                                                </div>
+                                                <div className="flex gap-2 justify-end">
+                                                    <Button size="sm" variant="ghost" onClick={() => handleRejectSubmission(sub)} className="text-red-600 hover:bg-red-50">Reprovar</Button>
+                                                    <Button size="sm" onClick={() => handleApproveSubmission(sub)} className="bg-green-600 hover:bg-green-700 text-white border-none">Aprovar</Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )
+                    }
+
                     {/* Registrations List (Grouped by Base) */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                         <div className="p-6 border-b border-gray-100 bg-gray-50">
@@ -549,16 +972,19 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             )}
                         </div>
                     </div>
-                </div>
-            )}
+                </div >
+            )
 
-            {!isManager && !isBaseCoord && (
-                <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 col-span-full">
-                    <AlertCircle size={48} className="mx-auto text-gray-300 mb-4" />
-                    <h3 className="text-xl font-bold text-gray-400">Acesso Restrito</h3>
-                    <p className="text-gray-400 mt-2 font-medium">Você está visualizando este evento como convidado.<br />Apenas Coordenadores podem gerenciar inscrições.</p>
-                </div>
-            )}
+
+    {
+                !isManager && !isBaseCoord && (
+                    <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 col-span-full">
+                        <AlertCircle size={48} className="mx-auto text-gray-300 mb-4" />
+                        <h3 className="text-xl font-bold text-gray-400">Acesso Restrito</h3>
+                        <p className="text-gray-400 mt-2 font-medium">Você está visualizando este evento como convidado.<br />Apenas Coordenadores podem gerenciar inscrições.</p>
+                    </div>
+                )
+            }
 
             {/* Bottom Actions */}
             <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 z-40 md:pl-64">
@@ -578,36 +1004,235 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             </div>
 
             {/* Link Quiz Modal (Manager) */}
-            {isQuizModalOpen && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl scale-in-center">
-                        <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                            <h3 className="font-black text-lg">Vincular Quiz</h3>
-                            <button onClick={() => setIsQuizModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
+            {
+                isQuizModalOpen && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl scale-in-center">
+                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                                <h3 className="font-black text-lg">Vincular Quiz</h3>
+                                <button onClick={() => setIsQuizModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="p-4 max-h-[60vh] overflow-y-auto">
+                                {availableQuizzes.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {availableQuizzes.map(q => (
+                                            <button
+                                                key={q.id}
+                                                onClick={() => handleLinkQuiz(q.id)}
+                                                className="w-full text-left p-4 rounded-xl border border-gray-100 hover:bg-primary/5 hover:border-primary/50 transition-all group"
+                                            >
+                                                <p className="font-bold text-gray-800 group-hover:text-primary">{q.title}</p>
+                                                <p className="text-xs text-gray-400">{q.questions?.length || 0} questões</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-gray-500 py-8">Todos os quizzes já foram vinculados.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Submission Modal */}
+            {
+                selectedTaskForSubmission && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl scale-in-center">
+                            <div className="p-6 border-b border-gray-100">
+                                <h3 className="font-black text-xl">{selectedTaskForSubmission.title}</h3>
+                                <p className="text-gray-500 text-sm mt-1">{selectedTaskForSubmission.description}</p>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                {selectedTaskForSubmission.type === 'check' && (
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="checkbox"
+                                            id="completed"
+                                            checked={submissionData.completed}
+                                            onChange={e => setSubmissionData({ ...submissionData, completed: e.target.checked })}
+                                            className="w-5 h-5 rounded border-gray-300"
+                                        />
+                                        <label htmlFor="completed" className="text-sm font-medium">Marcado como concluído</label>
+                                    </div>
+                                )}
+
+                                {selectedTaskForSubmission.type === 'text' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-500 mb-2">Resposta</label>
+                                        <textarea
+                                            className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                            rows={4}
+                                            value={submissionData.text}
+                                            onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
+                                        />
+                                    </div>
+                                )}
+
+                                {selectedTaskForSubmission.type === 'link' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-500 mb-2">Link</label>
+                                        <input
+                                            type="url"
+                                            className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                            placeholder="https://..."
+                                            value={submissionData.link}
+                                            onChange={e => setSubmissionData({ ...submissionData, link: e.target.value })}
+                                        />
+                                    </div>
+                                )}
+
+                                {selectedTaskForSubmission.type === 'upload' && (
+                                    <div className="space-y-3">
+                                        <label className="block text-sm font-bold text-gray-500 mb-2">Anexo</label>
+                                        {!submissionData.link ? (
+                                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors">
+                                                {isUploading ? (
+                                                    <div className="flex flex-col items-center gap-2 text-primary">
+                                                        <Loader2 className="animate-spin" size={24} />
+                                                        <span className="text-sm font-medium">Enviando...</span>
+                                                    </div>
+                                                ) : (
+                                                    <label className="cursor-pointer flex flex-col items-center gap-2">
+                                                        <UploadCloud className="text-gray-400" size={32} />
+                                                        <span className="text-sm font-medium text-gray-700">Clique para selecionar</span>
+                                                        <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,video/*,application/pdf" />
+                                                    </label>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <CheckCircle2 size={16} className="text-green-600" />
+                                                    <span className="text-xs text-green-700 truncate underline">{submissionData.link}</span>
+                                                </div>
+                                                <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="p-1 hover:bg-green-100 rounded-full">
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="pt-4 flex gap-3">
+                                    <Button className="flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200" onClick={() => setSelectedTaskForSubmission(null)}>Cancelar</Button>
+                                    <Button className="flex-1" onClick={handleSubmitProof} disabled={isSaving}>Enviar</Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Task Modal (Create/Edit) */}
+            {
+                isTaskModalOpen && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl scale-in-center">
+                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                                <h3 className="font-black text-lg">{editingTask ? "Editar Desafio" : "Novo Desafio"}</h3>
+                                <button onClick={() => setIsTaskModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Título</label>
+                                    <input
+                                        type="text"
+                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
+                                        placeholder="Ex: Doação de Alimentos"
+                                        value={taskFormData.title}
+                                        onChange={e => setTaskFormData({ ...taskFormData, title: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Descrição</label>
+                                    <textarea
+                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 h-24 resize-none"
+                                        placeholder="Detalhes do que deve ser feito..."
+                                        value={taskFormData.description}
+                                        onChange={e => setTaskFormData({ ...taskFormData, description: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Pontos (XP)</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
+                                            value={taskFormData.points}
+                                            onChange={e => setTaskFormData({ ...taskFormData, points: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Tipo de Entrega</label>
+                                        <select
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
+                                            value={taskFormData.type}
+                                            onChange={e => setTaskFormData({ ...taskFormData, type: e.target.value as any })}
+                                        >
+                                            <option value="text">Texto</option>
+                                            <option value="upload">Upload (Foto/PDF)</option>
+                                            <option value="link">Link</option>
+                                            <option value="check">Apenas Marcar</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo (Opcional)</label>
+                                    <input
+                                        type="date"
+                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50"
+                                        value={taskFormData.deadline}
+                                        onChange={e => setTaskFormData({ ...taskFormData, deadline: e.target.value })}
+                                    />
+                                </div>
+
+                                <Button onClick={handleSaveTask} className="w-full py-4 text-lg font-bold rounded-xl shadow-lg mt-4" disabled={isSaving}>
+                                    {isSaving ? "Salvando..." : "Salvar Desafio"}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+            {/* Manual Quiz Player Modal */}
+            {manualQuizData.isOpen && manualQuizData.quizId && (
+                <IndividualQuizPlayer
+                    quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
+                    userId={manualQuizData.userId}
+                    onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
+                />
+            )}
+
+            {/* Quiz Selection Modal (if needed for manual start) */}
+            {manualQuizData.isOpen && !manualQuizData.quizId && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
+                            <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
                                 <X size={20} />
                             </button>
                         </div>
-                        <div className="p-4 max-h-[60vh] overflow-y-auto">
-                            {availableQuizzes.length > 0 ? (
-                                <div className="space-y-2">
-                                    {availableQuizzes.map(q => (
-                                        <button
-                                            key={q.id}
-                                            onClick={() => handleLinkQuiz(q.id)}
-                                            className="w-full text-left p-4 rounded-xl border border-gray-100 hover:bg-primary/5 hover:border-primary/50 transition-all group"
-                                        >
-                                            <p className="font-bold text-gray-800 group-hover:text-primary">{q.title}</p>
-                                            <p className="text-xs text-gray-400">{q.questions?.length || 0} questões</p>
-                                        </button>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-center text-gray-500 py-8">Todos os quizzes já foram vinculados.</p>
-                            )}
+                        <div className="space-y-2">
+                            {availableQuizzes.map(q => (
+                                <button
+                                    key={q.id}
+                                    onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
+                                    className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
+                                >
+                                    {q.title}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+        </div >
     );
 }

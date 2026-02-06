@@ -16,7 +16,17 @@ export async function POST(req: NextRequest) {
         const decodedToken = await auth.verifyIdToken(idToken);
 
         if (decodedToken.uid !== userId) {
-            return NextResponse.json({ error: "Unauthorized: User ID mismatch" }, { status: 403 });
+            // Check if requester is a manager/coordinator
+            const db = getAdminDb();
+            const requesterDoc = await db.collection("users").doc(decodedToken.uid).get();
+            const requesterData = requesterDoc.data();
+
+            const allowedRoles = ['master', 'admin', 'coord_geral', 'coord_regional', 'coord_distrital', 'coord_base', 'secretaria', 'coord_associacao', 'coord_uniao'];
+            const hasPermission = requesterData && allowedRoles.includes(requesterData.role);
+
+            if (!hasPermission) {
+                return NextResponse.json({ error: "Unauthorized: User ID mismatch and no manager privileges" }, { status: 403 });
+            }
         }
 
         if (score <= 0) {
