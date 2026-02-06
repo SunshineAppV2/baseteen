@@ -25,7 +25,8 @@ import {
     Edit3,
     Target, // Added
     Loader2, // Added
-    Heart // New
+    Heart,
+    Clock // Added
 } from "lucide-react";
 import {
     collection,
@@ -1308,47 +1309,46 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             </Button>
                         </div>
                     </div>
-                </div>
-    )
-}
+                )}
 
-{/* Manual Quiz Player Modal */ }
-{
-    manualQuizData.isOpen && manualQuizData.quizId && (
-        <IndividualQuizPlayer
-            quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
-            userId={manualQuizData.userId}
-            onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
-        />
-    )
-}
 
-{/* Quiz Selection Modal (if needed for manual start) */ }
-{
-    manualQuizData.isOpen && !manualQuizData.quizId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
-                    <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
-                        <X size={20} />
-                    </button>
-                </div>
-                <div className="space-y-2">
-                    {availableQuizzes.map(q => (
-                        <button
-                            key={q.id}
-                            onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
-                            className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
-                        >
-                            {q.title}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        </div>
-    )
-}
+            {/* Manual Quiz Player Modal */}
+            {
+                manualQuizData.isOpen && manualQuizData.quizId && (
+                    <IndividualQuizPlayer
+                        quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
+                        userId={manualQuizData.userId}
+                        onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
+                    />
+                )
+            }
+
+            {/* Quiz Selection Modal (if needed for manual start) */}
+            {
+                manualQuizData.isOpen && !manualQuizData.quizId && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
+                                <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="space-y-2">
+                                {availableQuizzes.map(q => (
+                                    <button
+                                        key={q.id}
+                                        onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
+                                        className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
+                                    >
+                                        {q.title}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
         </div >
     );
 }
