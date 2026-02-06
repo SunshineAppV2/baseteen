@@ -771,7 +771,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                         );
                                     }
 
-                                    const isExpired = deadline && now > deadline;
+                                    const isExpired = deadline ? now > deadline : false;
 
                                     return (
                                         <div key={task.id} className={clsx(
