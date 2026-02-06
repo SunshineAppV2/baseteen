@@ -56,7 +56,8 @@ interface Event {
     id: string;
     title: string;
     description: string;
-    date: any;
+    startDate: any;
+    endDate: any;
     location?: string;
     status: 'draft' | 'open' | 'active' | 'finished';
     linkedQuizzes?: string[];
@@ -558,7 +559,11 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             </span>
                         </div>
                         <div className="flex items-center gap-4 text-gray-500 font-medium mt-1">
-                            <span className="flex items-center gap-1.5"><Calendar size={16} /> {event.date?.toDate().toLocaleDateString('pt-BR')}</span>
+                            <span className="flex items-center gap-1.5">
+                                <Calendar size={16} />
+                                {event.startDate?.toDate().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}
+                                {event.endDate && ` a ${event.endDate.toDate().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}`}
+                            </span>
                             {event.location && <span className="flex items-center gap-1.5"><MapPin size={16} /> {event.location}</span>}
                         </div>
                     </div>

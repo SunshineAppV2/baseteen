@@ -30,7 +30,8 @@ interface Event {
     id: string;
     title: string;
     description: string;
-    date: any; // Timestamp
+    startDate: any; // Timestamp
+    endDate: any; // Timestamp
     location?: string;
     status: 'draft' | 'open' | 'active' | 'finished';
     linkedQuizzes?: string[];
@@ -48,8 +49,10 @@ export default function EventsPage() {
     const [formData, setFormData] = useState({
         title: "",
         description: "",
-        date: "",
-        time: "",
+        startDate: "",
+        startTime: "",
+        endDate: "",
+        endTime: "",
         location: "",
         status: "draft" as Event['status']
     });
@@ -62,8 +65,10 @@ export default function EventsPage() {
         setFormData({
             title: "",
             description: "",
-            date: "",
-            time: "09:00",
+            startDate: "",
+            startTime: "09:00",
+            endDate: "",
+            endTime: "18:00",
             location: "",
             status: "draft"
         });
@@ -74,19 +79,29 @@ export default function EventsPage() {
         setEditingId(event.id);
 
         // Parse timestamp to date/time strings for input
-        let dateStr = "";
-        let timeStr = "09:00";
-        if (event.date) {
-            const d = event.date.toDate();
-            dateStr = d.toISOString().split('T')[0];
-            timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        let startDateStr = "";
+        let startTimeStr = "09:00";
+        let endDateStr = "";
+        let endTimeStr = "18:00";
+
+        if (event.startDate) {
+            const d = event.startDate.toDate();
+            startDateStr = d.toISOString().split('T')[0];
+            startTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        if (event.endDate) {
+            const d = event.endDate.toDate();
+            endDateStr = d.toISOString().split('T')[0];
+            endTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
         setFormData({
             title: event.title,
             description: event.description || "",
-            date: dateStr,
-            time: timeStr,
+            startDate: startDateStr,
+            startTime: startTimeStr,
+            endDate: endDateStr,
+            endTime: endTimeStr,
             location: event.location || "",
             status: event.status
         });
@@ -104,16 +119,20 @@ export default function EventsPage() {
     };
 
     const handleSave = async () => {
-        if (!formData.title || !formData.date) return alert("Preencha título e data!");
+        if (!formData.title || !formData.startDate || !formData.endDate) return alert("Preencha título e datas!");
 
         try {
             // Combine Date + Time
-            const dateObj = new Date(`${formData.date}T${formData.time || '00:00'}`);
+            const startObj = new Date(`${formData.startDate}T${formData.startTime || '00:00'}`);
+            const endObj = new Date(`${formData.endDate}T${formData.endTime || '23:59'}`);
+
+            if (endObj < startObj) return alert("A data final deve ser maior que a inicial.");
 
             const payload = {
                 title: formData.title,
                 description: formData.description,
-                date: Timestamp.fromDate(dateObj),
+                startDate: Timestamp.fromDate(startObj),
+                endDate: Timestamp.fromDate(endObj),
                 location: formData.location,
                 status: formData.status,
                 updatedAt: serverTimestamp()
@@ -179,7 +198,7 @@ export default function EventsPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-                {events.sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0)).map(event => (
+                {events.sort((a, b) => (b.startDate?.seconds || 0) - (a.startDate?.seconds || 0)).map(event => (
                     <div key={event.id} className="group bg-white rounded-2xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-all relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-primary to-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
 
@@ -187,10 +206,11 @@ export default function EventsPage() {
                             <div className="space-y-3 flex-1">
                                 <div className="flex items-center gap-3">
                                     <StatusBadge status={event.status} />
-                                    {event.date && (
+                                    {event.startDate && (
                                         <span className="text-gray-400 text-xs font-bold uppercase flex items-center gap-1">
                                             <Calendar size={12} />
-                                            {event.date.toDate().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                                            {event.startDate.toDate().toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}
+                                            {event.endDate && ` - ${event.endDate.toDate().toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}`}
                                         </span>
                                     )}
                                 </div>
@@ -206,7 +226,7 @@ export default function EventsPage() {
                                     )}
                                     <div className="flex items-center gap-1.5">
                                         <Clock size={16} className="text-gray-400" />
-                                        {event.date?.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                        {event.startDate?.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                     </div>
                                 </div>
                             </div>
@@ -286,22 +306,38 @@ export default function EventsPage() {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">Data</label>
-                                        <input
-                                            type="date"
-                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 focus:border-primary/50 outline-none"
-                                            value={formData.date}
-                                            onChange={e => setFormData({ ...formData, date: e.target.value })}
-                                        />
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">Início</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="date"
+                                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-2 font-medium text-gray-700 focus:border-primary/50 outline-none text-sm"
+                                                value={formData.startDate}
+                                                onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+                                            />
+                                            <input
+                                                type="time"
+                                                className="w-20 bg-gray-50 border-2 border-gray-100 rounded-xl p-2 font-medium text-gray-700 focus:border-primary/50 outline-none text-sm"
+                                                value={formData.startTime}
+                                                onChange={e => setFormData({ ...formData, startTime: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">Hora</label>
-                                        <input
-                                            type="time"
-                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 focus:border-primary/50 outline-none"
-                                            value={formData.time}
-                                            onChange={e => setFormData({ ...formData, time: e.target.value })}
-                                        />
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">Fim</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="date"
+                                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-2 font-medium text-gray-700 focus:border-primary/50 outline-none text-sm"
+                                                value={formData.endDate}
+                                                onChange={e => setFormData({ ...formData, endDate: e.target.value })}
+                                            />
+                                            <input
+                                                type="time"
+                                                className="w-20 bg-gray-50 border-2 border-gray-100 rounded-xl p-2 font-medium text-gray-700 focus:border-primary/50 outline-none text-sm"
+                                                value={formData.endTime}
+                                                onChange={e => setFormData({ ...formData, endTime: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
