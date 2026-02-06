@@ -46,7 +46,8 @@ import {
     orderBy,
     DocumentData
 } from "firebase/firestore";
-import { db } from "@/services/firebase";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/services/firebase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 // import { toast } from "react-hot-toast"; // Module not found
@@ -451,34 +452,36 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         m.displayName?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // --- Submission Logic ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !auth.currentUser) return;
 
         setIsUploading(true);
         try {
-            const token = await auth.currentUser.getIdToken();
-            const initRes = await fetch('/api/drive/upload', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size })
-            });
+            const fileRef = ref(storage, `uploads/${eventId}/${auth.currentUser.uid}/${Date.now()}_${file.name}`);
+            const uploadTask = uploadBytesResumable(fileRef, file);
 
-            if (!initRes.ok) throw new Error("Falha ao iniciar upload");
-            const { uploadUrl } = await initRes.json();
-
-            const uploadRes = await fetch(uploadUrl, { method: 'PUT', body: file });
-            if (!uploadRes.ok) throw new Error("Falha no envio do arquivo");
-
-            const driveFile = await uploadRes.json();
-            const link = driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view?usp=sharing`;
-            setSubmissionData(prev => ({ ...prev, link }));
+            uploadTask.on('state_changed',
+                (snapshot) => {
+                    // Optional: You could track progress here if you wanted to default it to a % state
+                    // const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    // console.log('Upload is ' + progress + '% done');
+                },
+                (error) => {
+                    console.error("Upload error:", error);
+                    alert("Erro no upload: " + error.message);
+                    setIsUploading(false);
+                },
+                async () => {
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    setSubmissionData(prev => ({ ...prev, link: downloadURL }));
+                    setIsUploading(false);
+                }
+            );
 
         } catch (error: any) {
             console.error(error);
-            alert("Erro ao fazer upload: " + error.message);
-        } finally {
+            alert("Erro ao iniciar upload: " + error.message);
             setIsUploading(false);
         }
     };
