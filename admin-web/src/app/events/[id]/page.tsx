@@ -692,739 +692,767 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             {isBaseCoord && (
                 <div className="space-y-6">
                     {/* ... (Existing Registration UI) ... */}
-                    <div className="card-soft p-0 overflow-hidden border border-gray-100 shadow-xl bg-white rounded-3xl">
-                        {/* ... existing header ... */}
-                        <div className="p-6 bg-primary text-white flex justify-between items-center">
-                            {/* ... */}
-                            <div>
-                                <h2 className="text-xl font-bold flex items-center gap-2">
-                                    <Users size={24} /> Gerenciar Inscrições
-                                </h2>
-                                <p className="text-blue-100 text-sm">Selecione os membros que participarão deste evento.</p>
-                            </div>
-                            <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
-                                <span className="block text-2xl font-black">{selectedUsers.size}</span>
-                                <span className="text-[10px] uppercase font-bold tracking-widest opacity-80">Confirmados</span>
-                            </div>
-                        </div>
-
-                        <div className="p-4 border-b border-gray-100 bg-gray-50 flex gap-4 items-center sticky top-0 z-10">
-                            {/* ... Search ... */}
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                                <input
-                                    type="text"
-                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-primary/50"
-                                    placeholder="Buscar membro..."
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                />
-                            </div>
-                            <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => handleSelectAll(true)} className="text-xs">Todos</Button>
-                                <Button variant="outline" onClick={() => handleSelectAll(false)} className="text-xs">Nenhum</Button>
-                            </div>
-                        </div>
-
-                        <div className="max-h-[50vh] overflow-y-auto p-2">
-                            {/* ... Members List ... */}
-                            {loadingMembers ? (
-                                <div className="p-8 text-center text-gray-400">Carregando lista...</div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    {filteredMembers.map(member => {
-                                        const isSelected = selectedUsers.has(member.id);
-                                        return (
-                                            <div
-                                                key={member.id}
-                                                className={clsx(
-                                                    "p-3 rounded-xl border flex items-center justify-between transition-all active:scale-[0.98]",
-                                                    isSelected
-                                                        ? "bg-primary/5 border-primary/30"
-                                                        : "bg-white border-gray-100 hover:border-primary/30"
-                                                )}
-                                            >
-                                                <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleUser(member.id)}>
-                                                    <div className={clsx(
-                                                        "w-5 h-5 rounded-full border flex items-center justify-center transition-colors",
-                                                        isSelected ? "bg-primary border-primary" : "border-gray-300"
-                                                    )}>
-                                                        {isSelected && <CheckCircle2 size={12} className="text-white" />}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-gray-800 text-sm">{member.displayName}</p>
-                                                        {(member as any).email && <p className="text-[10px] text-gray-400">{(member as any).email}</p>}
-                                                    </div>
-                                                </div>
-                                                {(isBaseCoord || isManager) && availableQuizzes.length > 0 && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleStartManualQuiz(member.id);
-                                                        }}
-                                                        className="h-8 w-8 p-0 rounded-full hover:bg-purple-100 text-purple-600"
-                                                        title="Responder Quiz Manualmente"
-                                                    >
-                                                        <Gamepad size={16} />
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                    {filteredMembers.length === 0 && (
-                                        <p className="col-span-2 text-center py-8 text-gray-400">Nenhum membro encontrado.</p>
-                                    )}
+                    {isBaseRegistrationOnly ? (
+                        <div className="card-soft p-6 border border-gray-100 shadow-xl bg-white rounded-3xl mb-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-bold flex items-center gap-2 mb-2">
+                                        <Users className="text-primary" /> Inscrição da Base
+                                    </h2>
+                                    <p className="text-gray-500 max-w-lg">
+                                        Este evento é exclusivo para Bases. Ao confirmar, a inscrição será realizada em nome da Base.
+                                    </p>
                                 </div>
-                            )
-                            }
-                        </div>
-                    </div>
-
-                    {/* BASE TASKS VIEW */}
-                    <div id="base-tasks-view" className="mt-8">
-                        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                            <Target className="text-primary" /> Desafios do Evento
-                        </h2>
-                        {eventTasks.length === 0 ? (
-                            <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-gray-200 text-gray-400">
-                                Nenhum desafio disponível.
-                            </div>
-                        ) : registrations.length === 0 ? (
-                            <div className="p-8 text-center bg-yellow-50 rounded-2xl border border-yellow-200">
-                                <AlertCircle className="mx-auto text-yellow-600 mb-4" size={48} />
-                                <h3 className="font-bold text-lg text-yellow-800">Inscrição Necessária</h3>
-                                <p className="text-yellow-700">Inscreva pelo menos um membro para visualizar e participar dos desafios.</p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {eventTasks.map(task => {
-                                    const submission = mySubmissions.find(s => s.taskId === task.id);
-                                    const status = submission?.status;
-
-                                    // Date Logic
-                                    const now = new Date();
-                                    const releaseDate = task.releaseDate ? new Date(task.releaseDate + 'T00:00:00') : null;
-                                    const deadline = task.deadline ? new Date(task.deadline + 'T23:59:59') : null;
-
-                                    // Visibility Check (Release Date)
-                                    if (releaseDate && now < releaseDate) {
-                                        return (
-                                            <div key={task.id} className="bg-gray-50 p-6 rounded-2xl border-2 border-dashed border-gray-200 opacity-60 flex flex-col items-center justify-center text-center gap-2">
-                                                <Clock size={24} className="text-gray-400" />
-                                                <p className="font-bold text-gray-400">Desafio Bloqueado</p>
-                                                <p className="text-xs text-gray-400 uppercase tracking-widest">Disponível em {releaseDate.toLocaleDateString('pt-BR')}</p>
-                                            </div>
-                                        );
-                                    }
-
-                                    const isExpired = deadline ? now > deadline : false;
-
-                                    return (
-                                        <div key={task.id} className={clsx(
-                                            "bg-white p-6 rounded-2xl border-2 transition-all relative overflow-hidden",
-                                            status === 'approved' ? "border-green-500 bg-green-50" :
-                                                status === 'rejected' ? "border-red-500 bg-red-50" :
-                                                    status === 'pending' ? "border-yellow-500 bg-yellow-50" :
-                                                        "border-gray-100 hover:border-primary/50"
-                                        )}>
-                                            <div className="flex justify-between items-start mb-4">
-                                                <div>
-                                                    <h3 className="font-bold text-lg">{task.title}</h3>
-                                                    <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 capitalize">{task.type}</span>
-                                                </div>
-                                                <span className="text-2xl font-black text-primary">{task.points} PTS</span>
-                                            </div>
-                                            <p className="text-sm text-gray-500 mb-6">{task.description}</p>
-
-                                            <div className="flex justify-between items-center">
-                                                {status ? (
-                                                    <span className={clsx(
-                                                        "px-3 py-1 rounded-full text-xs font-bold uppercase",
-                                                        status === 'approved' ? "bg-green-200 text-green-800" :
-                                                            status === 'rejected' ? "bg-red-200 text-red-800" :
-                                                                "bg-yellow-200 text-yellow-800"
-                                                    )}>
-                                                        {status === 'approved' ? "Aprovado" : status === 'rejected' ? "Reprovado" : "Pendente"}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">Não enviado</span>
-                                                )}
-
-                                                {!status || status === 'rejected' ? (
-                                                    <Button size="sm" onClick={() => setSelectedTaskForSubmission(task)} disabled={isExpired && !status}>
-                                                        {isExpired ? "Encerrado" : status === 'rejected' ? "Tentar Novamente" : "Enviar Resposta"}
-                                                    </Button>
-                                                ) : <div />}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* MANAGER VIEW */}
-            {isManager && (
-                <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Stats */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-                            <div>
-                                <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Inscritos Totais</p>
-                                <p className="text-4xl font-black text-gray-900">{totalRegistrations}</p>
-                            </div>
-                            <div className="bg-blue-50 p-3 rounded-xl text-primary">
-                                <Users size={24} />
-                            </div>
-                        </div>
-
-                        {/* Linked Quizzes */}
-                        <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                                <div className="flex items-center gap-2">
-                                    <Gamepad size={20} className="text-gray-500" />
-                                    <h3 className="font-bold text-lg text-gray-900">Quizzes do Evento</h3>
-                                </div>
-                                <Button size="sm" onClick={() => setIsQuizModalOpen(true)} className="gap-2">
-                                    <Plus size={16} /> Vincular Quiz
-                                </Button>
-                            </div>
-
-                            <div className="p-6">
-                                {linkedQuizzesList.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {linkedQuizzesList.map(q => (
-                                            <div key={q.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="bg-green-100 text-green-700 p-2 rounded-lg font-bold text-xs uppercase">Game</div>
-                                                    <span className="font-bold text-gray-800">{q.title}</span>
-                                                    <span className="text-xs text-gray-400">({q.questions?.length || 0} questões)</span>
-                                                </div>
-                                                <Button variant="ghost" size="sm" onClick={() => handleUnlinkQuiz(q.id)} className="text-gray-400 hover:text-red-500">
-                                                    <Trash2 size={16} />
-                                                </Button>
-                                            </div>
-                                        ))}
+                                {registrations.some(r => r.baseId === user.baseId) ? (
+                                    <div className="bg-green-100 text-green-800 px-6 py-3 rounded-xl font-bold flex items-center gap-2">
+                                        <CheckCircle2 size={24} /> Base Inscrita
                                     </div>
                                 ) : (
-                                    <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
-                                        <LinkIcon size={32} className="mx-auto mb-2 opacity-50" />
-                                        <p>Nenhum quiz vinculado a este evento.</p>
+                                    <Button
+                                        onClick={handleBaseRegistration}
+                                        disabled={isSaving}
+                                        className="px-8 py-4 text-lg font-bold shadow-xl hover:scale-105 transition-transform bg-primary text-white rounded-xl"
+                                    >
+                                        {isSaving ? <Loader2 className="animate-spin" /> : "Inscrever Base"}
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="card-soft p-0 overflow-hidden border border-gray-100 shadow-xl bg-white rounded-3xl">
+                            {/* ... existing header ... */}
+                            <div className="p-6 bg-primary text-white flex justify-between items-center">
+                                {/* ... */}
+                                <div>
+                                    <h2 className="text-xl font-bold flex items-center gap-2">
+                                        <Users size={24} /> Gerenciar Inscrições
+                                    </h2>
+                                    <p className="text-blue-100 text-sm">Selecione os membros que participarão deste evento.</p>
+                                </div>
+                                <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
+                                    <span className="block text-2xl font-black">{selectedUsers.size}</span>
+                                    <span className="text-[10px] uppercase font-bold tracking-widest opacity-80">Confirmados</span>
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-b border-gray-100 bg-gray-50 flex gap-4 items-center sticky top-0 z-10">
+                                {/* ... Search ... */}
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                    <input
+                                        type="text"
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-primary/50"
+                                        placeholder="Buscar membro..."
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="outline" onClick={() => handleSelectAll(true)} className="text-xs">Todos</Button>
+                                    <Button variant="outline" onClick={() => handleSelectAll(false)} className="text-xs">Nenhum</Button>
+                                </div>
+                            </div>
+
+                            <div className="max-h-[50vh] overflow-y-auto p-2">
+                                {/* ... Members List ... */}
+                                {loadingMembers ? (
+                                    <div className="p-8 text-center text-gray-400">Carregando lista...</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {filteredMembers.map(member => {
+                                            const isSelected = selectedUsers.has(member.id);
+                                            return (
+                                                <div
+                                                    key={member.id}
+                                                    className={clsx(
+                                                        "p-3 rounded-xl border flex items-center justify-between transition-all active:scale-[0.98]",
+                                                        isSelected
+                                                            ? "bg-primary/5 border-primary/30"
+                                                            : "bg-white border-gray-100 hover:border-primary/30"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleUser(member.id)}>
+                                                        <div className={clsx(
+                                                            "w-5 h-5 rounded-full border flex items-center justify-center transition-colors",
+                                                            isSelected ? "bg-primary border-primary" : "border-gray-300"
+                                                        )}>
+                                                            {isSelected && <CheckCircle2 size={12} className="text-white" />}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-gray-800 text-sm">{member.displayName}</p>
+                                                            {(member as any).email && <p className="text-[10px] text-gray-400">{(member as any).email}</p>}
+                                                        </div>
+                                                    </div>
+                                                    {(isBaseCoord || isManager) && availableQuizzes.length > 0 && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleStartManualQuiz(member.id);
+                                                            }}
+                                                            className="h-8 w-8 p-0 rounded-full hover:bg-purple-100 text-purple-600"
+                                                            title="Responder Quiz Manualmente"
+                                                        >
+                                                            <Gamepad size={16} />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                        {filteredMembers.length === 0 && (
+                                            <p className="col-span-2 text-center py-8 text-gray-400">Nenhum membro encontrado.</p>
+                                        )}
+                                    </div>
+                                )
+                                }
+                            </div>
+                    )}
+
+
+                            {/* BASE TASKS VIEW */}
+                            <div id="base-tasks-view" className="mt-8">
+                                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                    <Target className="text-primary" /> Desafios do Evento
+                                </h2>
+                                {eventTasks.length === 0 ? (
+                                    <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-gray-200 text-gray-400">
+                                        Nenhum desafio disponível.
+                                    </div>
+                                ) : registrations.length === 0 ? (
+                                    <div className="p-8 text-center bg-yellow-50 rounded-2xl border border-yellow-200">
+                                        <AlertCircle className="mx-auto text-yellow-600 mb-4" size={48} />
+                                        <h3 className="font-bold text-lg text-yellow-800">Inscrição Necessária</h3>
+                                        <p className="text-yellow-700">Inscreva pelo menos um membro para visualizar e participar dos desafios.</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {eventTasks.map(task => {
+                                            const submission = mySubmissions.find(s => s.taskId === task.id);
+                                            const status = submission?.status;
+
+                                            // Date Logic
+                                            const now = new Date();
+                                            const releaseDate = task.releaseDate ? new Date(task.releaseDate + 'T00:00:00') : null;
+                                            const deadline = task.deadline ? new Date(task.deadline + 'T23:59:59') : null;
+
+                                            // Visibility Check (Release Date)
+                                            if (releaseDate && now < releaseDate) {
+                                                return (
+                                                    <div key={task.id} className="bg-gray-50 p-6 rounded-2xl border-2 border-dashed border-gray-200 opacity-60 flex flex-col items-center justify-center text-center gap-2">
+                                                        <Clock size={24} className="text-gray-400" />
+                                                        <p className="font-bold text-gray-400">Desafio Bloqueado</p>
+                                                        <p className="text-xs text-gray-400 uppercase tracking-widest">Disponível em {releaseDate.toLocaleDateString('pt-BR')}</p>
+                                                    </div>
+                                                );
+                                            }
+
+                                            const isExpired = deadline ? now > deadline : false;
+
+                                            return (
+                                                <div key={task.id} className={clsx(
+                                                    "bg-white p-6 rounded-2xl border-2 transition-all relative overflow-hidden",
+                                                    status === 'approved' ? "border-green-500 bg-green-50" :
+                                                        status === 'rejected' ? "border-red-500 bg-red-50" :
+                                                            status === 'pending' ? "border-yellow-500 bg-yellow-50" :
+                                                                "border-gray-100 hover:border-primary/50"
+                                                )}>
+                                                    <div className="flex justify-between items-start mb-4">
+                                                        <div>
+                                                            <h3 className="font-bold text-lg">{task.title}</h3>
+                                                            <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 capitalize">{task.type}</span>
+                                                        </div>
+                                                        <span className="text-2xl font-black text-primary">{task.points} PTS</span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 mb-6">{task.description}</p>
+
+                                                    <div className="flex justify-between items-center">
+                                                        {status ? (
+                                                            <span className={clsx(
+                                                                "px-3 py-1 rounded-full text-xs font-bold uppercase",
+                                                                status === 'approved' ? "bg-green-200 text-green-800" :
+                                                                    status === 'rejected' ? "bg-red-200 text-red-800" :
+                                                                        "bg-yellow-200 text-yellow-800"
+                                                            )}>
+                                                                {status === 'approved' ? "Aprovado" : status === 'rejected' ? "Reprovado" : "Pendente"}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-400">Não enviado</span>
+                                                        )}
+
+                                                        {!status || status === 'rejected' ? (
+                                                            <Button size="sm" onClick={() => setSelectedTaskForSubmission(task)} disabled={isExpired && !status}>
+                                                                {isExpired ? "Encerrado" : status === 'rejected' ? "Tentar Novamente" : "Enviar Resposta"}
+                                                            </Button>
+                                                        ) : <div />}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    {/* TASKS MANAGEMENT (Manager View) */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                                <Target size={20} /> Desafios / Requisitos
-                            </h3>
-                            <Button size="sm" onClick={() => {
-                                setEditingTask(null);
-                                setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
-                                setIsTaskModalOpen(true);
-                            }} className="gap-2">
-                                <Plus size={16} /> Novo Desafio
-                            </Button>
-                        </div>
-                        <div className="p-6">
-                            {eventTasks.length > 0 ? (
-                                <div className="space-y-3">
-                                    {eventTasks.map(task => (
-                                        <div key={task.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-3 mb-1">
-                                                    <span className="font-bold text-gray-800">{task.title}</span>
-                                                    <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold">{task.points} PTS</span>
-                                                    <span className="text-xs text-gray-400 capitalize bg-gray-100 px-2 py-0.5 rounded">{task.type}</span>
-                                                </div>
-                                                <p className="text-sm text-gray-500 line-clamp-1">{task.description}</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <Button variant="ghost" size="sm" onClick={() => {
-                                                    setEditingTask(task);
-                                                    setTaskFormData(task);
-                                                    setIsTaskModalOpen(true);
-                                                }}>
-                                                    <Edit3 size={16} className="text-gray-400 hover:text-blue-500" />
-                                                </Button>
-                                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task.id)}>
-                                                    <Trash2 size={16} className="text-gray-400 hover:text-red-500" />
-                                                </Button>
-                                            </div>
+                    {/* MANAGER VIEW */}
+                    {isManager && (
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Stats */}
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                    <div>
+                                        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Inscritos Totais</p>
+                                        <p className="text-4xl font-black text-gray-900">{totalRegistrations}</p>
+                                    </div>
+                                    <div className="bg-blue-50 p-3 rounded-xl text-primary">
+                                        <Users size={24} />
+                                    </div>
+                                </div>
+
+                                {/* Linked Quizzes */}
+                                <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                    <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                        <div className="flex items-center gap-2">
+                                            <Gamepad size={20} className="text-gray-500" />
+                                            <h3 className="font-bold text-lg text-gray-900">Quizzes do Evento</h3>
                                         </div>
-                                    ))}
+                                        <Button size="sm" onClick={() => setIsQuizModalOpen(true)} className="gap-2">
+                                            <Plus size={16} /> Vincular Quiz
+                                        </Button>
+                                    </div>
+
+                                    <div className="p-6">
+                                        {linkedQuizzesList.length > 0 ? (
+                                            <div className="space-y-3">
+                                                {linkedQuizzesList.map(q => (
+                                                    <div key={q.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="bg-green-100 text-green-700 p-2 rounded-lg font-bold text-xs uppercase">Game</div>
+                                                            <span className="font-bold text-gray-800">{q.title}</span>
+                                                            <span className="text-xs text-gray-400">({q.questions?.length || 0} questões)</span>
+                                                        </div>
+                                                        <Button variant="ghost" size="sm" onClick={() => handleUnlinkQuiz(q.id)} className="text-gray-400 hover:text-red-500">
+                                                            <Trash2 size={16} />
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
+                                                <LinkIcon size={32} className="mx-auto mb-2 opacity-50" />
+                                                <p>Nenhum quiz vinculado a este evento.</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            ) : (
-                                <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
-                                    <Target size={32} className="mx-auto mb-2 opacity-50" />
-                                    <p>Nenhum desafio criado.</p>
+                            </div>
+
+                            {/* TASKS MANAGEMENT (Manager View) */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                                    <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                        <Target size={20} /> Desafios / Requisitos
+                                    </h3>
+                                    <Button size="sm" onClick={() => {
+                                        setEditingTask(null);
+                                        setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
+                                        setIsTaskModalOpen(true);
+                                    }} className="gap-2">
+                                        <Plus size={16} /> Novo Desafio
+                                    </Button>
                                 </div>
+                                <div className="p-6">
+                                    {eventTasks.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {eventTasks.map(task => (
+                                                <div key={task.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-3 mb-1">
+                                                            <span className="font-bold text-gray-800">{task.title}</span>
+                                                            <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold">{task.points} PTS</span>
+                                                            <span className="text-xs text-gray-400 capitalize bg-gray-100 px-2 py-0.5 rounded">{task.type}</span>
+                                                        </div>
+                                                        <p className="text-sm text-gray-500 line-clamp-1">{task.description}</p>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <Button variant="ghost" size="sm" onClick={() => {
+                                                            setEditingTask(task);
+                                                            setTaskFormData(task);
+                                                            setIsTaskModalOpen(true);
+                                                        }}>
+                                                            <Edit3 size={16} className="text-gray-400 hover:text-blue-500" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task.id)}>
+                                                            <Trash2 size={16} className="text-gray-400 hover:text-red-500" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">
+                                            <Target size={32} className="mx-auto mb-2 opacity-50" />
+                                            <p>Nenhum desafio criado.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+
+
+                            {/* SUBMISSIONS REVIEW (Manager View) */}
+                            {
+                                allSubmissions.filter(s => s.status === 'pending').length > 0 && (
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                        <div className="p-6 border-b border-gray-100 bg-orange-50 flex justify-between items-center">
+                                            <h3 className="font-bold text-lg text-orange-900 flex items-center gap-2">
+                                                <AlertCircle size={20} /> Aprovações Pendentes
+                                            </h3>
+                                            <span className="bg-orange-200 text-orange-800 px-3 py-1 rounded-full text-xs font-bold">
+                                                {allSubmissions.filter(s => s.status === 'pending').length}
+                                            </span>
+                                        </div>
+                                        <div className="p-6 space-y-3">
+                                            {allSubmissions.filter(s => s.status === 'pending').map(sub => {
+                                                const task = eventTasks.find(t => t.id === sub.taskId);
+                                                return (
+                                                    <div key={sub.id} className="p-4 border border-orange-100 bg-orange-50/30 rounded-xl">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <div>
+                                                                <p className="font-bold text-gray-800">{sub.baseName}</p>
+                                                                <p className="text-xs text-gray-500">{task?.title || 'Desafio desconhecido'}</p>
+                                                            </div>
+                                                            <span className="font-bold text-orange-600">{sub.xpReward} XP</span>
+                                                        </div>
+                                                        <div className="bg-white p-3 rounded border border-gray-100 text-sm text-gray-600 mb-3">
+                                                            <span className="font-bold text-xs uppercase text-gray-400 block mb-1">Evidência:</span>
+                                                            {sub.proof.content.startsWith('http') ? (
+                                                                <a href={sub.proof.content} target="_blank" className="text-blue-600 underline flex items-center gap-1">
+                                                                    <LinkIcon size={12} /> Abrir Link / Arquivo
+                                                                </a>
+                                                            ) : sub.proof.content}
+                                                        </div>
+                                                        <div className="flex gap-2 justify-end">
+                                                            <Button size="sm" variant="ghost" onClick={() => handleRejectSubmission(sub)} className="text-red-600 hover:bg-red-50">Reprovar</Button>
+                                                            <Button size="sm" onClick={() => handleApproveSubmission(sub)} className="bg-green-600 hover:bg-green-700 text-white border-none">Aprovar</Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )
+                            }
+
+                            {/* Registrations List (Grouped by Base) */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                <div className="p-6 border-b border-gray-100 bg-gray-50">
+                                    <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                        <Users size={20} /> Relatório de Inscrições
+                                    </h3>
+                                </div>
+                                <div className="p-6">
+                                    {Object.keys(registrationsByBase).length > 0 ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            {Object.entries(registrationsByBase).map(([baseName, regs]) => (
+                                                <div key={baseName} className="border border-gray-200 rounded-xl overflow-hidden">
+                                                    <div className="bg-gray-50 p-3 border-b border-gray-200 flex justify-between items-center">
+                                                        <span className="font-bold text-sm text-gray-700 truncate max-w-[70%]">{baseName}</span>
+                                                        <span className="bg-primary/10 text-primary text-xs font-black px-2 py-1 rounded-full">{regs.length}</span>
+                                                    </div>
+                                                    <div className="max-h-48 overflow-y-auto p-2 bg-white space-y-1">
+                                                        {regs.map(r => (
+                                                            <div key={r.userId} className="text-xs text-gray-600 px-2 py-1.5 hover:bg-gray-50 rounded flex items-center gap-2">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                                                                {r.userDisplayName || `Usuário...`}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-400">
+                                            <p>Nenhuma inscrição realizada ainda.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div >
+                    )}
+
+
+                    {
+                        !isManager && !isBaseCoord && (
+                            <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 col-span-full">
+                                <AlertCircle size={48} className="mx-auto text-gray-300 mb-4" />
+                                <h3 className="text-xl font-bold text-gray-400">Acesso Restrito</h3>
+                                <p className="text-gray-400 mt-2 font-medium">Você está visualizando este evento como convidado.<br />Apenas Coordenadores podem gerenciar inscrições.</p>
+                            </div>
+                        )
+                    }
+
+                    {/* Bottom Actions */}
+                    <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 z-40 md:pl-64">
+                        <div className="max-w-5xl mx-auto flex justify-end gap-4">
+                            <Button variant="outline" onClick={() => router.back()}>Voltar</Button>
+                            {isBaseCoord && (
+                                <Button
+                                    onClick={handleSaveRegistrations}
+                                    disabled={isSaving}
+                                    className="bg-primary text-white shadow-lg shadow-primary/20 hover:scale-105 transition-transform"
+                                >
+                                    <Save size={18} className="mr-2" />
+                                    Salvar Inscrições
+                                </Button>
                             )}
                         </div>
                     </div>
 
-
-
-                    {/* SUBMISSIONS REVIEW (Manager View) */}
+                    {/* Link Quiz Modal (Manager) */}
                     {
-                        allSubmissions.filter(s => s.status === 'pending').length > 0 && (
-                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                                <div className="p-6 border-b border-gray-100 bg-orange-50 flex justify-between items-center">
-                                    <h3 className="font-bold text-lg text-orange-900 flex items-center gap-2">
-                                        <AlertCircle size={20} /> Aprovações Pendentes
-                                    </h3>
-                                    <span className="bg-orange-200 text-orange-800 px-3 py-1 rounded-full text-xs font-bold">
-                                        {allSubmissions.filter(s => s.status === 'pending').length}
-                                    </span>
-                                </div>
-                                <div className="p-6 space-y-3">
-                                    {allSubmissions.filter(s => s.status === 'pending').map(sub => {
-                                        const task = eventTasks.find(t => t.id === sub.taskId);
-                                        return (
-                                            <div key={sub.id} className="p-4 border border-orange-100 bg-orange-50/30 rounded-xl">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div>
-                                                        <p className="font-bold text-gray-800">{sub.baseName}</p>
-                                                        <p className="text-xs text-gray-500">{task?.title || 'Desafio desconhecido'}</p>
-                                                    </div>
-                                                    <span className="font-bold text-orange-600">{sub.xpReward} XP</span>
-                                                </div>
-                                                <div className="bg-white p-3 rounded border border-gray-100 text-sm text-gray-600 mb-3">
-                                                    <span className="font-bold text-xs uppercase text-gray-400 block mb-1">Evidência:</span>
-                                                    {sub.proof.content.startsWith('http') ? (
-                                                        <a href={sub.proof.content} target="_blank" className="text-blue-600 underline flex items-center gap-1">
-                                                            <LinkIcon size={12} /> Abrir Link / Arquivo
-                                                        </a>
-                                                    ) : sub.proof.content}
-                                                </div>
-                                                <div className="flex gap-2 justify-end">
-                                                    <Button size="sm" variant="ghost" onClick={() => handleRejectSubmission(sub)} className="text-red-600 hover:bg-red-50">Reprovar</Button>
-                                                    <Button size="sm" onClick={() => handleApproveSubmission(sub)} className="bg-green-600 hover:bg-green-700 text-white border-none">Aprovar</Button>
-                                                </div>
+                        isQuizModalOpen && (
+                            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                                <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl scale-in-center">
+                                    <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                                        <h3 className="font-black text-lg">Vincular Quiz</h3>
+                                        <button onClick={() => setIsQuizModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                    <div className="p-4 max-h-[60vh] overflow-y-auto">
+                                        {availableQuizzes.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {availableQuizzes.map(q => (
+                                                    <button
+                                                        key={q.id}
+                                                        onClick={() => handleLinkQuiz(q.id)}
+                                                        className="w-full text-left p-4 rounded-xl border border-gray-100 hover:bg-primary/5 hover:border-primary/50 transition-all group"
+                                                    >
+                                                        <p className="font-bold text-gray-800 group-hover:text-primary">{q.title}</p>
+                                                        <p className="text-xs text-gray-400">{q.questions?.length || 0} questões</p>
+                                                    </button>
+                                                ))}
                                             </div>
-                                        );
-                                    })}
+                                        ) : (
+                                            <p className="text-center text-gray-500 py-8">Todos os quizzes já foram vinculados.</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )
                     }
 
-                    {/* Registrations List (Grouped by Base) */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="p-6 border-b border-gray-100 bg-gray-50">
-                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                                <Users size={20} /> Relatório de Inscrições
-                            </h3>
-                        </div>
-                        <div className="p-6">
-                            {Object.keys(registrationsByBase).length > 0 ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {Object.entries(registrationsByBase).map(([baseName, regs]) => (
-                                        <div key={baseName} className="border border-gray-200 rounded-xl overflow-hidden">
-                                            <div className="bg-gray-50 p-3 border-b border-gray-200 flex justify-between items-center">
-                                                <span className="font-bold text-sm text-gray-700 truncate max-w-[70%]">{baseName}</span>
-                                                <span className="bg-primary/10 text-primary text-xs font-black px-2 py-1 rounded-full">{regs.length}</span>
+                    {/* Submission Modal */}
+                    {
+                        selectedTaskForSubmission && (
+                            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                                <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl scale-in-center">
+                                    <div className="p-6 border-b border-gray-100">
+                                        <h3 className="font-black text-xl">{selectedTaskForSubmission.title}</h3>
+                                        <p className="text-gray-500 text-sm mt-1">{selectedTaskForSubmission.description}</p>
+                                    </div>
+                                    <div className="p-6 space-y-4">
+                                        {selectedTaskForSubmission.type === 'check' && (
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    id="completed"
+                                                    checked={submissionData.completed}
+                                                    onChange={e => setSubmissionData({ ...submissionData, completed: e.target.checked })}
+                                                    className="w-5 h-5 rounded border-gray-300"
+                                                />
+                                                <label htmlFor="completed" className="text-sm font-medium">Marcado como concluído</label>
                                             </div>
-                                            <div className="max-h-48 overflow-y-auto p-2 bg-white space-y-1">
-                                                {regs.map(r => (
-                                                    <div key={r.userId} className="text-xs text-gray-600 px-2 py-1.5 hover:bg-gray-50 rounded flex items-center gap-2">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-                                                        {r.userDisplayName || `Usuário...`}
+                                        )}
+
+                                        {selectedTaskForSubmission.type === 'text' && (
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-500 mb-2">Resposta</label>
+                                                <textarea
+                                                    className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                    rows={4}
+                                                    value={submissionData.text}
+                                                    onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {selectedTaskForSubmission.type === 'link' && (
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-500 mb-2">Link</label>
+                                                <input
+                                                    type="url"
+                                                    className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                    placeholder="https://..."
+                                                    value={submissionData.link}
+                                                    onChange={e => setSubmissionData({ ...submissionData, link: e.target.value })}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {selectedTaskForSubmission.type === 'text_link' && (
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-gray-500 mb-2">Resposta em Texto</label>
+                                                    <textarea
+                                                        className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                        rows={3}
+                                                        value={submissionData.text}
+                                                        onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-bold text-gray-500 mb-2">Link Complementar</label>
+                                                    <input
+                                                        type="url"
+                                                        className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                        placeholder="https://..."
+                                                        value={submissionData.link}
+                                                        onChange={e => setSubmissionData({ ...submissionData, link: e.target.value })}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {selectedTaskForSubmission.type === 'text_upload' && (
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-gray-500 mb-2">Resposta em Texto</label>
+                                                    <textarea
+                                                        className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
+                                                        rows={3}
+                                                        value={submissionData.text}
+                                                        onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <label className="block text-sm font-bold text-gray-500 mb-2">Anexo (Imagem/PDF)</label>
+                                                    {!submissionData.link ? (
+                                                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors">
+                                                            {isUploading ? (
+                                                                <div className="flex flex-col items-center gap-2 text-primary">
+                                                                    <Loader2 className="animate-spin" size={24} />
+                                                                    <span className="text-sm font-medium">Enviando...</span>
+                                                                </div>
+                                                            ) : (
+                                                                <label className="cursor-pointer flex flex-col items-center gap-2">
+                                                                    <UploadCloud className="text-gray-400" size={32} />
+                                                                    <span className="text-sm font-medium text-gray-700">Clique para selecionar</span>
+                                                                    <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,video/*,application/pdf" />
+                                                                </label>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
+                                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                                <CheckCircle2 size={16} className="text-green-600" />
+                                                                <span className="text-xs text-green-700 truncate underline">{submissionData.link}</span>
+                                                            </div>
+                                                            <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="p-1 hover:bg-green-100 rounded-full">
+                                                                <X size={16} />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {selectedTaskForSubmission.type === 'upload' && (
+                                            <div className="space-y-3">
+                                                <label className="block text-sm font-bold text-gray-500 mb-2">Anexo</label>
+                                                {!submissionData.link ? (
+                                                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors">
+                                                        {isUploading ? (
+                                                            <div className="flex flex-col items-center gap-2 text-primary">
+                                                                <Loader2 className="animate-spin" size={24} />
+                                                                <span className="text-sm font-medium">Enviando...</span>
+                                                            </div>
+                                                        ) : (
+                                                            <label className="cursor-pointer flex flex-col items-center gap-2">
+                                                                <UploadCloud className="text-gray-400" size={32} />
+                                                                <span className="text-sm font-medium text-gray-700">Clique para selecionar</span>
+                                                                <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,video/*,application/pdf" />
+                                                            </label>
+                                                        )}
                                                     </div>
-                                                ))}
+                                                ) : (
+                                                    <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            <CheckCircle2 size={16} className="text-green-600" />
+                                                            <span className="text-xs text-green-700 truncate underline">{submissionData.link}</span>
+                                                        </div>
+                                                        <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="p-1 hover:bg-green-100 rounded-full">
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="pt-4 flex gap-3">
+                                            <Button className="flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200" onClick={() => setSelectedTaskForSubmission(null)}>Cancelar</Button>
+                                            <Button className="flex-1" onClick={handleSubmitProof} disabled={isSaving}>Enviar</Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* Task Modal (Create/Edit) */}
+                    {
+                        isTaskModalOpen && (
+                            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                                <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl scale-in-center">
+                                    <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                                        <h3 className="font-black text-lg">{editingTask ? "Editar Desafio" : "Novo Desafio"}</h3>
+                                        <button onClick={() => setIsTaskModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                    <div className="p-6 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Título</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
+                                                placeholder="Ex: Doação de Alimentos"
+                                                value={taskFormData.title}
+                                                onChange={e => setTaskFormData({ ...taskFormData, title: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Descrição</label>
+                                            <textarea
+                                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 h-24 resize-none"
+                                                placeholder="Detalhes do que deve ser feito..."
+                                                value={taskFormData.description}
+                                                onChange={e => setTaskFormData({ ...taskFormData, description: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Pontos (XP)</label>
+                                                <input
+                                                    type="number"
+                                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
+                                                    value={taskFormData.points}
+                                                    onChange={e => setTaskFormData({ ...taskFormData, points: Number(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Tipo de Entrega</label>
+                                                <select
+                                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
+                                                    value={taskFormData.type}
+                                                    onChange={e => setTaskFormData({ ...taskFormData, type: e.target.value as any })}
+                                                >
+                                                    <option value="text">Texto</option>
+                                                    <option value="text_link">Texto + Link</option>
+                                                    <option value="text_upload">Texto + Upload</option>
+                                                    <option value="upload">Upload (Foto/PDF)</option>
+                                                    <option value="link">Link</option>
+                                                    <option value="check">Apenas Marcar</option>
+                                                </select>
                                             </div>
                                         </div>
-                                    ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Liberação (Início)</label>
+                                            <input
+                                                type="date"
+                                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
+                                                value={taskFormData.releaseDate || ''}
+                                                onChange={e => setTaskFormData({ ...taskFormData, releaseDate: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo (Fim)</label>
+                                            <input
+                                                type="date"
+                                                className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
+                                                value={taskFormData.deadline}
+                                                onChange={e => setTaskFormData({ ...taskFormData, deadline: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4">
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Tipo de Inscrição</label>
+                                        <div className="flex gap-4">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="registrationType"
+                                                    value="individual"
+                                                    checked={!taskFormData.registrationType || taskFormData.registrationType === 'individual'}
+                                                    onChange={() => setTaskFormData({ ...taskFormData, registrationType: 'individual' })}
+                                                    className="w-4 h-4 text-primary"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Individual (Por Membro)</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="registrationType"
+                                                    value="base"
+                                                    checked={taskFormData.registrationType === 'base'}
+                                                    onChange={() => setTaskFormData({ ...taskFormData, registrationType: 'base' })}
+                                                    className="w-4 h-4 text-primary"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Apenas Base (Rota GA/Soul+)</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <Button onClick={handleSaveTask} className="w-full py-4 text-lg font-bold rounded-xl shadow-lg mt-4" disabled={isSaving}>
+                                        {isSaving ? "Salvando..." : "Salvar Desafio"}
+                                    </Button>
                                 </div>
-                            ) : (
-                                <div className="text-center py-8 text-gray-400">
-                                    <p>Nenhuma inscrição realizada ainda.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div >
-            )}
-
-
-            {
-                !isManager && !isBaseCoord && (
-                    <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 col-span-full">
-                        <AlertCircle size={48} className="mx-auto text-gray-300 mb-4" />
-                        <h3 className="text-xl font-bold text-gray-400">Acesso Restrito</h3>
-                        <p className="text-gray-400 mt-2 font-medium">Você está visualizando este evento como convidado.<br />Apenas Coordenadores podem gerenciar inscrições.</p>
-                    </div>
-                )
-            }
-
-            {/* Bottom Actions */}
-            <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 z-40 md:pl-64">
-                <div className="max-w-5xl mx-auto flex justify-end gap-4">
-                    <Button variant="outline" onClick={() => router.back()}>Voltar</Button>
-                    {isBaseCoord && (
-                        <Button
-                            onClick={handleSaveRegistrations}
-                            disabled={isSaving}
-                            className="bg-primary text-white shadow-lg shadow-primary/20 hover:scale-105 transition-transform"
-                        >
-                            <Save size={18} className="mr-2" />
-                            Salvar Inscrições
-                        </Button>
-                    )}
-                </div>
-            </div>
-
-            {/* Link Quiz Modal (Manager) */}
-            {
-                isQuizModalOpen && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                        <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl scale-in-center">
-                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                                <h3 className="font-black text-lg">Vincular Quiz</h3>
-                                <button onClick={() => setIsQuizModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
-                                    <X size={20} />
-                                </button>
                             </div>
-                            <div className="p-4 max-h-[60vh] overflow-y-auto">
-                                {availableQuizzes.length > 0 ? (
+                        )}
+
+
+                    {/* Manual Quiz Player Modal */}
+                    {
+                        manualQuizData.isOpen && manualQuizData.quizId && (
+                            <IndividualQuizPlayer
+                                quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
+                                userId={manualQuizData.userId}
+                                onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
+                            />
+                        )
+                    }
+
+                    {/* Quiz Selection Modal (if needed for manual start) */}
+                    {
+                        manualQuizData.isOpen && !manualQuizData.quizId && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                                <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
+                                        <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
+                                            <X size={20} />
+                                        </button>
+                                    </div>
                                     <div className="space-y-2">
                                         {availableQuizzes.map(q => (
                                             <button
                                                 key={q.id}
-                                                onClick={() => handleLinkQuiz(q.id)}
-                                                className="w-full text-left p-4 rounded-xl border border-gray-100 hover:bg-primary/5 hover:border-primary/50 transition-all group"
+                                                onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
+                                                className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
                                             >
-                                                <p className="font-bold text-gray-800 group-hover:text-primary">{q.title}</p>
-                                                <p className="text-xs text-gray-400">{q.questions?.length || 0} questões</p>
+                                                {q.title}
                                             </button>
                                         ))}
                                     </div>
-                                ) : (
-                                    <p className="text-center text-gray-500 py-8">Todos os quizzes já foram vinculados.</p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Submission Modal */}
-            {
-                selectedTaskForSubmission && (
-                    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                        <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl scale-in-center">
-                            <div className="p-6 border-b border-gray-100">
-                                <h3 className="font-black text-xl">{selectedTaskForSubmission.title}</h3>
-                                <p className="text-gray-500 text-sm mt-1">{selectedTaskForSubmission.description}</p>
-                            </div>
-                            <div className="p-6 space-y-4">
-                                {selectedTaskForSubmission.type === 'check' && (
-                                    <div className="flex items-center gap-3">
-                                        <input
-                                            type="checkbox"
-                                            id="completed"
-                                            checked={submissionData.completed}
-                                            onChange={e => setSubmissionData({ ...submissionData, completed: e.target.checked })}
-                                            className="w-5 h-5 rounded border-gray-300"
-                                        />
-                                        <label htmlFor="completed" className="text-sm font-medium">Marcado como concluído</label>
-                                    </div>
-                                )}
-
-                                {selectedTaskForSubmission.type === 'text' && (
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-500 mb-2">Resposta</label>
-                                        <textarea
-                                            className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
-                                            rows={4}
-                                            value={submissionData.text}
-                                            onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
-                                        />
-                                    </div>
-                                )}
-
-                                {selectedTaskForSubmission.type === 'link' && (
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-500 mb-2">Link</label>
-                                        <input
-                                            type="url"
-                                            className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
-                                            placeholder="https://..."
-                                            value={submissionData.link}
-                                            onChange={e => setSubmissionData({ ...submissionData, link: e.target.value })}
-                                        />
-                                    </div>
-                                )}
-
-                                {selectedTaskForSubmission.type === 'text_link' && (
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-500 mb-2">Resposta em Texto</label>
-                                            <textarea
-                                                className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
-                                                rows={3}
-                                                value={submissionData.text}
-                                                onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-500 mb-2">Link Complementar</label>
-                                            <input
-                                                type="url"
-                                                className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
-                                                placeholder="https://..."
-                                                value={submissionData.link}
-                                                onChange={e => setSubmissionData({ ...submissionData, link: e.target.value })}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-
-                                {selectedTaskForSubmission.type === 'text_upload' && (
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-500 mb-2">Resposta em Texto</label>
-                                            <textarea
-                                                className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-primary/20"
-                                                rows={3}
-                                                value={submissionData.text}
-                                                onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-3">
-                                            <label className="block text-sm font-bold text-gray-500 mb-2">Anexo (Imagem/PDF)</label>
-                                            {!submissionData.link ? (
-                                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors">
-                                                    {isUploading ? (
-                                                        <div className="flex flex-col items-center gap-2 text-primary">
-                                                            <Loader2 className="animate-spin" size={24} />
-                                                            <span className="text-sm font-medium">Enviando...</span>
-                                                        </div>
-                                                    ) : (
-                                                        <label className="cursor-pointer flex flex-col items-center gap-2">
-                                                            <UploadCloud className="text-gray-400" size={32} />
-                                                            <span className="text-sm font-medium text-gray-700">Clique para selecionar</span>
-                                                            <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,video/*,application/pdf" />
-                                                        </label>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
-                                                    <div className="flex items-center gap-2 overflow-hidden">
-                                                        <CheckCircle2 size={16} className="text-green-600" />
-                                                        <span className="text-xs text-green-700 truncate underline">{submissionData.link}</span>
-                                                    </div>
-                                                    <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="p-1 hover:bg-green-100 rounded-full">
-                                                        <X size={16} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {selectedTaskForSubmission.type === 'upload' && (
-                                    <div className="space-y-3">
-                                        <label className="block text-sm font-bold text-gray-500 mb-2">Anexo</label>
-                                        {!submissionData.link ? (
-                                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors">
-                                                {isUploading ? (
-                                                    <div className="flex flex-col items-center gap-2 text-primary">
-                                                        <Loader2 className="animate-spin" size={24} />
-                                                        <span className="text-sm font-medium">Enviando...</span>
-                                                    </div>
-                                                ) : (
-                                                    <label className="cursor-pointer flex flex-col items-center gap-2">
-                                                        <UploadCloud className="text-gray-400" size={32} />
-                                                        <span className="text-sm font-medium text-gray-700">Clique para selecionar</span>
-                                                        <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*,video/*,application/pdf" />
-                                                    </label>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
-                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                    <CheckCircle2 size={16} className="text-green-600" />
-                                                    <span className="text-xs text-green-700 truncate underline">{submissionData.link}</span>
-                                                </div>
-                                                <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="p-1 hover:bg-green-100 rounded-full">
-                                                    <X size={16} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="pt-4 flex gap-3">
-                                    <Button className="flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200" onClick={() => setSelectedTaskForSubmission(null)}>Cancelar</Button>
-                                    <Button className="flex-1" onClick={handleSubmitProof} disabled={isSaving}>Enviar</Button>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Task Modal (Create/Edit) */}
-            {
-                isTaskModalOpen && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                        <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl scale-in-center">
-                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                                <h3 className="font-black text-lg">{editingTask ? "Editar Desafio" : "Novo Desafio"}</h3>
-                                <button onClick={() => setIsTaskModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
-                                    <X size={20} />
-                                </button>
-                            </div>
-                            <div className="p-6 space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Título</label>
-                                    <input
-                                        type="text"
-                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
-                                        placeholder="Ex: Doação de Alimentos"
-                                        value={taskFormData.title}
-                                        onChange={e => setTaskFormData({ ...taskFormData, title: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Descrição</label>
-                                    <textarea
-                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 h-24 resize-none"
-                                        placeholder="Detalhes do que deve ser feito..."
-                                        value={taskFormData.description}
-                                        onChange={e => setTaskFormData({ ...taskFormData, description: e.target.value })}
-                                    />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Pontos (XP)</label>
-                                        <input
-                                            type="number"
-                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
-                                            value={taskFormData.points}
-                                            onChange={e => setTaskFormData({ ...taskFormData, points: Number(e.target.value) })}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Tipo de Entrega</label>
-                                        <select
-                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-bold text-gray-900 outline-none focus:border-primary/50"
-                                            value={taskFormData.type}
-                                            onChange={e => setTaskFormData({ ...taskFormData, type: e.target.value as any })}
-                                        >
-                                            <option value="text">Texto</option>
-                                            <option value="text_link">Texto + Link</option>
-                                            <option value="text_upload">Texto + Upload</option>
-                                            <option value="upload">Upload (Foto/PDF)</option>
-                                            <option value="link">Link</option>
-                                            <option value="check">Apenas Marcar</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Liberação (Início)</label>
-                                    <input
-                                        type="date"
-                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
-                                        value={taskFormData.releaseDate || ''}
-                                        onChange={e => setTaskFormData({ ...taskFormData, releaseDate: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo (Fim)</label>
-                                    <input
-                                        type="date"
-                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
-                                        value={taskFormData.deadline}
-                                        onChange={e => setTaskFormData({ ...taskFormData, deadline: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-4">
-                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Tipo de Inscrição</label>
-                                <div className="flex gap-4">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="registrationType"
-                                            value="individual"
-                                            checked={!taskFormData.registrationType || taskFormData.registrationType === 'individual'}
-                                            onChange={() => setTaskFormData({ ...taskFormData, registrationType: 'individual' })}
-                                            className="w-4 h-4 text-primary"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">Individual (Por Membro)</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="registrationType"
-                                            value="base"
-                                            checked={taskFormData.registrationType === 'base'}
-                                            onChange={() => setTaskFormData({ ...taskFormData, registrationType: 'base' })}
-                                            className="w-4 h-4 text-primary"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">Apenas Base (Rota GA/Soul+)</span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <Button onClick={handleSaveTask} className="w-full py-4 text-lg font-bold rounded-xl shadow-lg mt-4" disabled={isSaving}>
-                                {isSaving ? "Salvando..." : "Salvar Desafio"}
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
-
-            {/* Manual Quiz Player Modal */}
-            {
-                manualQuizData.isOpen && manualQuizData.quizId && (
-                    <IndividualQuizPlayer
-                        quiz={availableQuizzes.find(q => q.id === manualQuizData.quizId)!}
-                        userId={manualQuizData.userId}
-                        onClose={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })}
-                    />
-                )
-            }
-
-            {/* Quiz Selection Modal (if needed for manual start) */}
-            {
-                manualQuizData.isOpen && !manualQuizData.quizId && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-                        <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl scale-in-center">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-black text-lg text-gray-800">Selecione o Quiz</h3>
-                                <button onClick={() => setManualQuizData({ isOpen: false, userId: "", quizId: null })} className="p-2 hover:bg-gray-100 rounded-full">
-                                    <X size={20} />
-                                </button>
-                            </div>
-                            <div className="space-y-2">
-                                {availableQuizzes.map(q => (
-                                    <button
-                                        key={q.id}
-                                        onClick={() => setManualQuizData(prev => ({ ...prev, quizId: q.id }))}
-                                        className="w-full p-4 rounded-xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all text-left font-bold text-gray-700 hover:text-primary"
-                                    >
-                                        {q.title}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-        </div >
-    );
+                        )
+                    }
+                </div >
+            );
 }
