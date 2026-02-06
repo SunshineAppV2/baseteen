@@ -340,7 +340,9 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
     // Task Management Logic
     const handleSaveTask = async () => {
-        if (!taskFormData.title || !taskFormData.points) return alert("Preencha título e pontos!");
+        if (!taskFormData.title || !taskFormData.points || !taskFormData.releaseDate || !taskFormData.deadline) {
+            return alert("Preencha título, pontos e as datas de início e fim!");
+        }
         setIsSaving(true);
         try {
             const payload = {
@@ -1282,7 +1284,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Liberação (Opcional)</label>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Liberação (Início)</label>
                                     <input
                                         type="date"
                                         className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
@@ -1291,7 +1293,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo (Opcional)</label>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo (Fim)</label>
                                     <input
                                         type="date"
                                         className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm"
