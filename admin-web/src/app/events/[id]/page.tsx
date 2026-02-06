@@ -97,6 +97,7 @@ interface EventTask {
     type: "upload" | "text" | "check" | "link" | "text_link" | "text_upload";
     deadline?: string;
     releaseDate?: string;
+    registrationType?: 'individual' | 'base';
 }
 
 interface BaseSubmission {
@@ -323,7 +324,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                 createdAt: serverTimestamp(),
                 status: 'registered',
                 userDisplayName: user.displayName || "Coordenador",
-                baseName: user.baseName || "Base"
+                baseName: (user as any).baseName || "Base"
             });
 
             await batch.commit();
@@ -692,34 +693,53 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             {isBaseCoord && (
                 <div className="space-y-6">
                     {/* ... (Existing Registration UI) ... */}
-                    {isBaseRegistrationOnly ? (
+                    {isBaseRegistrationOnly && !showIndividualRegistration ? (
                         <div className="card-soft p-6 border border-gray-100 shadow-xl bg-white rounded-3xl mb-6">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                                 <div>
                                     <h2 className="text-xl font-bold flex items-center gap-2 mb-2">
                                         <Users className="text-primary" /> Inscrição da Base
                                     </h2>
                                     <p className="text-gray-500 max-w-lg">
-                                        Este evento é exclusivo para Bases. Ao confirmar, a inscrição será realizada em nome da Base.
+                                        Este evento opera com inscrição unificada por Base. Ao confirmar, a Base estará apta a participar dos desafios.
                                     </p>
                                 </div>
-                                {registrations.some(r => r.baseId === user.baseId) ? (
-                                    <div className="bg-green-100 text-green-800 px-6 py-3 rounded-xl font-bold flex items-center gap-2">
-                                        <CheckCircle2 size={24} /> Base Inscrita
-                                    </div>
-                                ) : (
-                                    <Button
-                                        onClick={handleBaseRegistration}
-                                        disabled={isSaving}
-                                        className="px-8 py-4 text-lg font-bold shadow-xl hover:scale-105 transition-transform bg-primary text-white rounded-xl"
+                                <div className="flex flex-col gap-3">
+                                    {registrations.some(r => r.baseId === user.baseId) ? (
+                                        <div className="bg-green-100 text-green-800 px-6 py-3 rounded-xl font-bold flex items-center gap-2 justify-center">
+                                            <CheckCircle2 size={24} /> Base Inscrita
+                                        </div>
+                                    ) : (
+                                        <Button
+                                            onClick={handleBaseRegistration}
+                                            disabled={isSaving}
+                                            className="px-8 py-4 text-lg font-bold shadow-xl hover:scale-105 transition-transform bg-primary text-white rounded-xl"
+                                        >
+                                            {isSaving ? <Loader2 className="animate-spin" /> : "Inscrever Base"}
+                                        </Button>
+                                    )}
+                                    <button
+                                        onClick={() => setShowIndividualRegistration(true)}
+                                        className="text-xs text-gray-400 hover:text-primary underline mt-2 text-center"
                                     >
-                                        {isSaving ? <Loader2 className="animate-spin" /> : "Inscrever Base"}
-                                    </Button>
-                                )}
+                                        Gerenciar membros individualmente
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ) : (
                         <div className="card-soft p-0 overflow-hidden border border-gray-100 shadow-xl bg-white rounded-3xl">
+                            {/* Toggle Back for Base Events */}
+                            {isBaseRegistrationOnly && (
+                                <div className="bg-yellow-50 p-2 text-center border-b border-yellow-100">
+                                    <button
+                                        onClick={() => setShowIndividualRegistration(false)}
+                                        className="text-xs font-bold text-yellow-700 hover:text-yellow-800 flex items-center justify-center gap-1"
+                                    >
+                                        <ArrowLeft size={12} /> Voltar para Inscrição de Base
+                                    </button>
+                                </div>
+                            )}
                             {/* ... existing header ... */}
                             <div className="p-6 bg-primary text-white flex justify-between items-center">
                                 {/* ... */}
