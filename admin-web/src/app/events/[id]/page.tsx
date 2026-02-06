@@ -63,6 +63,7 @@ interface Event {
     location?: string;
     status: 'draft' | 'open' | 'active' | 'finished';
     linkedQuizzes?: string[];
+    registrationType?: 'individual' | 'base';
 }
 
 interface User {
@@ -125,6 +126,9 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria' || user?.role === 'coord_associacao';
     const isBaseCoord = user?.role === 'coord_base';
 
+    // Rota/Soul+ Logic (Base Registration Only)
+    const isBaseRegistrationOnly = event?.registrationType === 'base' || event?.title?.toLowerCase().includes('rota ga') || event?.title?.toLowerCase().includes('soul');
+
     // Base Coord State
     const [baseMembers, setBaseMembers] = useState<User[]>([]);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -143,7 +147,8 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
         type: "text",
         deadline: "",
-        releaseDate: ""
+        releaseDate: "",
+        registrationType: "individual"
     });
 
     // Base Submission State
@@ -288,6 +293,46 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         } catch (err) {
             console.error(err);
             alert("Erro ao salvar inscrições.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleBaseRegistration = async () => {
+        if (!user?.baseId) return;
+        setIsSaving(true);
+        try {
+            // Check if already registered (any registration for this base)
+            if (registrations.some(r => r.baseId === user.baseId)) {
+                // If registered, maybe we want to unregister? 
+                // For now, let's assume it's just "Join". 
+                // But if they are clicked "Inscrever Base" and they are already registered (maybe visually hidden?), we shouldn't duplicate.
+                // Actually, if registrations.length > 0, the UI won't show this button (it shows "Inscrito").
+                // So if we are here, we need to register.
+            }
+
+            const batch = writeBatch(db);
+            const newDocRef = doc(collection(db, "event_registrations"));
+
+            // Register the COORDINATOR as the representative of the Base
+            batch.set(newDocRef, {
+                eventId,
+                userId: user.uid,
+                baseId: user.baseId,
+                registeredBy: user.uid,
+                createdAt: serverTimestamp(),
+                status: 'registered',
+                userDisplayName: user.displayName || "Coordenador",
+                baseName: user.baseName || "Base"
+            });
+
+            await batch.commit();
+            alert("Base inscrita com sucesso!");
+            window.location.reload();
+
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao inscrever base.");
         } finally {
             setIsSaving(false);
         }
@@ -1304,6 +1349,34 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                         value={taskFormData.deadline}
                                         onChange={e => setTaskFormData({ ...taskFormData, deadline: e.target.value })}
                                     />
+                                </div>
+                            </div>
+
+                            <div className="mt-4">
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Tipo de Inscrição</label>
+                                <div className="flex gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="registrationType"
+                                            value="individual"
+                                            checked={!taskFormData.registrationType || taskFormData.registrationType === 'individual'}
+                                            onChange={() => setTaskFormData({ ...taskFormData, registrationType: 'individual' })}
+                                            className="w-4 h-4 text-primary"
+                                        />
+                                        <span className="text-sm font-medium text-gray-700">Individual (Por Membro)</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="registrationType"
+                                            value="base"
+                                            checked={taskFormData.registrationType === 'base'}
+                                            onChange={() => setTaskFormData({ ...taskFormData, registrationType: 'base' })}
+                                            className="w-4 h-4 text-primary"
+                                        />
+                                        <span className="text-sm font-medium text-gray-700">Apenas Base (Rota GA/Soul+)</span>
+                                    </label>
                                 </div>
                             </div>
 
