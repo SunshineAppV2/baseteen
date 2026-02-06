@@ -48,7 +48,7 @@ import {
 import { db } from "@/services/firebase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { toast } from "react-hot-toast";
+// import { toast } from "react-hot-toast"; // Module not found
 import IndividualQuizPlayer from "@/app/quiz/IndividualQuizPlayer";
 import { clsx } from "clsx";
 
@@ -494,7 +494,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                 taskId: selectedTaskForSubmission.id,
                 eventId: eventId,
                 baseId: user.baseId,
-                baseName: user.baseName || coordinatorBaseName,
+                baseName: (user as any).baseName || coordinatorBaseName,
                 submittedBy: user.uid,
                 submittedByName: user.displayName || "Coordenador",
                 districtId: user.districtId,
@@ -692,7 +692,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                                     </div>
                                                     <div>
                                                         <p className="font-bold text-gray-800 text-sm">{member.displayName}</p>
-                                                        {member.email && <p className="text-[10px] text-gray-400">{member.email}</p>}
+                                                        {(member as any).email && <p className="text-[10px] text-gray-400">{(member as any).email}</p>}
                                                     </div>
                                                 </div>
                                                 {(isBaseCoord || isManager) && availableQuizzes.length > 0 && (
@@ -973,10 +973,10 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
                 </div >
-            )
+            )}
 
 
-    {
+            {
                 !isManager && !isBaseCoord && (
                     <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 col-span-full">
                         <AlertCircle size={48} className="mx-auto text-gray-300 mb-4" />
