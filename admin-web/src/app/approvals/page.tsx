@@ -716,8 +716,11 @@ function BaseSubmissionCard({ submission, onApprove, onReject, onRevoke }: { sub
     const [taskPoints, setTaskPoints] = useState<number>(submission.xpReward || 0);
     const [taskDeadline, setTaskDeadline] = useState<string | null>(null);
 
+    const [baseName, setBaseName] = useState<string>(submission.baseName || "Base");
+
     useEffect(() => {
-        const fetchTask = async () => {
+        const fetchDetails = async () => {
+            // Fetch Task Details
             if (submission.taskId) {
                 try {
                     const taskRef = doc(db, "tasks", submission.taskId);
@@ -734,9 +737,23 @@ function BaseSubmissionCard({ submission, onApprove, onReject, onRevoke }: { sub
                     console.error("Err fetch task", err);
                 }
             }
+
+            // Fetch Base Name if missing or looks like an ID (optional check)
+            if (submission.baseId) {
+                try {
+                    const baseRef = doc(db, "bases", submission.baseId);
+                    const baseSnap = await getDoc(baseRef);
+                    if (baseSnap.exists()) {
+                        const baseData = baseSnap.data();
+                        setBaseName(baseData.name || `Base ${submission.baseId}`);
+                    }
+                } catch (err) {
+                    console.error("Err fetch base", err);
+                }
+            }
         };
-        fetchTask();
-    }, [submission.taskId]);
+        fetchDetails();
+    }, [submission.taskId, submission.baseId]);
 
     // Check availability
     const isLate = useMemo(() => {
@@ -761,7 +778,7 @@ function BaseSubmissionCard({ submission, onApprove, onReject, onRevoke }: { sub
                             🏠
                         </div>
                         <div>
-                            <p className="font-bold text-text-primary">{submission.baseName || "Base"}</p>
+                            <p className="font-bold text-text-primary">{baseName}</p>
                             <p className="text-xs text-text-secondary">
                                 Enviado por: {submission.submittedByName} • {submission.proof.submittedAt?.toDate ? submission.proof.submittedAt.toDate().toLocaleString() : new Date(submission.proof.submittedAt).toLocaleString()}
                             </p>
