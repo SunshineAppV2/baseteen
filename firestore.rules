@@ -301,7 +301,8 @@ service cloud.firestore {
                     request.resource.data.status == 'pending';
       
       // Atualização: Admins, Secretaria, ou Coordenadores da hierarquia (para aprovar/reprovar)
-      allow update: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
+      allow update: if (isSignedIn() && resource.data.submittedBy == request.auth.uid && request.resource.data.status == 'pending') ||
+                    isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
       
       // Exclusão: Apenas Admins
       allow delete: if isOwnerOrAdmin();
