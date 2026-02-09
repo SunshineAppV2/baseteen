@@ -405,10 +405,14 @@ service cloud.firestore {
       );
     }
 
-    // EVENTS (Eventos Oficiais)
+    // EVENTS - Updated for Event Roles
     match /events/{eventId} {
         allow read: if isSignedIn();
-        allow write: if isOwnerOrAdmin() || hasRole('coord_geral') || hasRole('coord_associacao');
+        allow write: if isOwnerOrAdmin() || 
+                     hasRole('coord_geral') || 
+                     hasRole('coord_associacao') || 
+                     // Check eventRole field in user document (using helper or raw get)
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.eventRole in ['admin', 'editor'];
     }
 
     // EVENT REGISTRATIONS (Inscrições)

@@ -57,7 +57,8 @@ export default function EventsPage() {
         status: "draft" as Event['status']
     });
 
-    const isManager = ['master', 'coord_geral', 'admin', 'secretaria', 'coord_associacao', 'coord_uniao', 'coord_regiao', 'coord_distrital'].includes(user?.role || '');
+    const isManager = ['master', 'coord_geral', 'admin', 'secretaria', 'coord_associacao', 'coord_uniao', 'coord_regiao', 'coord_distrital'].includes(user?.role || '') || user?.eventRole === 'admin' || user?.eventRole === 'editor';
+    const canDelete = ['master', 'coord_geral', 'admin'].includes(user?.role || '') || user?.eventRole === 'admin';
 
     // --- Actions ---
     const handleCreateClick = () => {
@@ -238,9 +239,11 @@ export default function EventsPage() {
                                         <Button variant="outline" onClick={() => handleEditClick(event)} className="h-10 w-10 p-0 rounded-full border-gray-200">
                                             <Edit3 size={18} className="text-gray-500" />
                                         </Button>
-                                        <Button variant="outline" onClick={() => handleDelete(event.id)} className="h-10 w-10 p-0 rounded-full border-gray-200 hover:bg-red-50 hover:border-red-200">
-                                            <Trash2 size={18} className="text-red-500" />
-                                        </Button>
+                                        {canDelete && (
+                                            <Button variant="outline" onClick={() => handleDelete(event.id)} className="h-10 w-10 p-0 rounded-full border-gray-200 hover:bg-red-50 hover:border-red-200">
+                                                <Trash2 size={18} className="text-red-500" />
+                                            </Button>
+                                        )}
                                         <Button
                                             onClick={() => router.push(`/events/${event.id}`)}
                                             className="px-6 rounded-xl font-bold bg-gray-900 text-white hover:bg-gray-800"

@@ -14,6 +14,7 @@ interface AuthUser extends User {
     unionId?: string;
     classification?: string;
     status?: 'pending' | 'approved' | 'rejected';
+    eventRole?: 'admin' | 'editor';
 }
 
 interface AuthContextType {
@@ -87,6 +88,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                             unionId: userData.unionId,
                             classification: userData.classification,
                             status: userData.status || 'approved', // Default to approved for existing users
+                            eventRole: userData.eventRole,
                         } as AuthUser);
                     } else {
                         setUser(firebaseUser as AuthUser);

@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from "react";
 import { useCollection, firestoreService } from "@/hooks/useFirestore";
-import { auth, db } from "@/services/firebase";
+import { auth, db, storage } from "@/services/firebase";
 import { where, setDoc, doc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Button } from "@/components/ui/Button";
 import {
     Plus,
@@ -179,55 +180,34 @@ export default function TasksPage() {
     const [textImportValue, setTextImportValue] = useState("");
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        alert("Upload de arquivos temporariamente desativado para manutenção.");
-        return;
-        /*
         const file = e.target.files?.[0];
-        if (!file || !auth.currentUser) return;
+        if (!file || !currentUser || !viewingTask) return;
+
+        // Validation
+        if (file.size > 2 * 1024 * 1024) {
+            alert("O arquivo deve ter no máximo 2MB.");
+            return;
+        }
+
+        if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+            alert("Apenas imagens e PDF são permitidos.");
+            return;
+        }
 
         setIsUploading(true);
         try {
-            const token = await auth.currentUser.getIdToken();
-            const initRes = await fetch('/api/drive/upload', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    filename: file.name,
-                    contentType: file.type,
-                    size: file.size
-                })
-            });
+            const storageRef = ref(storage, `task-submissions/${viewingTask.id}/${currentUser.uid}/${file.name}`);
+            await uploadBytes(storageRef, file);
+            const downloadURL = await getDownloadURL(storageRef);
 
-            if (!initRes.ok) {
-                const errorData = await initRes.json();
-                throw new Error(errorData.error || "Falha ao iniciar upload");
-            }
-            const { uploadUrl } = await initRes.json();
-
-            const uploadRes = await fetch(uploadUrl, {
-                method: 'PUT',
-                body: file
-            });
-
-            if (!uploadRes.ok) {
-                const errorText = await uploadRes.text();
-                throw new Error(`Falha no envio do arquivo: ${uploadRes.status} ${uploadRes.statusText}`);
-            }
-
-            const driveFile = await uploadRes.json();
-            const link = driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view?usp=sharing`;
-            setSubmissionData(prev => ({ ...prev, link }));
-
+            setSubmissionData(prev => ({ ...prev, link: downloadURL }));
+            alert("Arquivo anexado com sucesso!");
         } catch (error: any) {
             console.error(error);
             alert("Erro ao fazer upload: " + error.message);
         } finally {
             setIsUploading(false);
         }
-        */
     };
 
     const resetForm = () => {
@@ -923,8 +903,41 @@ export default function TasksPage() {
                     <div className="bg-white rounded-3xl w-full max-w-lg p-6 space-y-4">
                         <div className="flex justify-between items-center"><h2 className="text-xl font-bold">{viewingTask.title}</h2><button onClick={() => setViewingTask(null)}><X /></button></div>
                         <p className="text-text-secondary">{viewingTask.description}</p>
-                        {viewingTask.type === 'text' && <textarea className="w-full input-field p-3 rounded-xl bg-surface" rows={4} value={submissionData.text} onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })} />}
-                        {viewingTask.type === 'check' && <label className="flex items-center gap-2"><input type="checkbox" checked={submissionData.completed} onChange={e => setSubmissionData({ ...submissionData, completed: e.target.checked })} /> Confirmar conclusão</label>}
+                        {viewingTask.type === 'text' && <textarea className="w-full input-field p-3 rounded-xl bg-surface" rows={4} value={submissionData.text} onChange={e => setSubmissionData({ ...submissionData, text: e.target.value })} placeholder="Digite sua resposta..." />}
+
+                        {(viewingTask.type === 'upload' || viewingTask.type === 'text') && (
+                            <div className="space-y-2">
+                                <label className="block text-sm font-bold text-text-secondary">Anexar Arquivo (Max 2MB - Imagem/PDF)</label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="file"
+                                        accept="image/*,application/pdf"
+                                        onChange={handleFileUpload}
+                                        disabled={isUploading}
+                                        className="block w-full text-sm text-slate-500
+                                        file:mr-4 file:py-2 file:px-4
+                                        file:rounded-full file:border-0
+                                        file:text-sm file:font-semibold
+                                        file:bg-primary/10 file:text-primary
+                                        hover:file:bg-primary/20"
+                                    />
+                                    {isUploading && <Loader2 className="animate-spin text-primary" size={20} />}
+                                </div>
+                                {submissionData.link && (
+                                    <div className="flex items-center gap-2 bg-green-50 p-2 rounded-lg text-green-700 text-sm">
+                                        <CheckCircle size={16} />
+                                        <a href={submissionData.link} target="_blank" rel="noopener noreferrer" className="underline hover:text-green-800 truncate max-w-[200px]">
+                                            Ver Anexo
+                                        </a>
+                                        <button onClick={() => setSubmissionData(prev => ({ ...prev, link: "" }))} className="text-red-500 hover:text-red-700 ml-auto">
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {viewingTask.type === 'check' && <label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-surface rounded-lg"><input type="checkbox" className="w-5 h-5 text-primary rounded focus:ring-primary" checked={submissionData.completed} onChange={e => setSubmissionData({ ...submissionData, completed: e.target.checked })} /> confirm que realizei esta atividade</label>}
                         <Button disabled={isSubmitSaving} onClick={handleSubmitResponse} className="w-full">{isSubmitSaving ? "Enviando..." : "Enviar"}</Button>
                     </div>
                 </div>
