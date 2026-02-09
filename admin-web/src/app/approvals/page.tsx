@@ -121,86 +121,97 @@ export default function ApprovalsPage() {
             });
     }, [baseSubmissions, viewMode]);
 
-    const handleApprove = async (submission: Submission, finalXp?: number) => {
+    const [approvalModal, setApprovalModal] = useState<{ submission: any, finalXp: number, type: 'individual' | 'base' } | null>(null);
+
+    // Initial Trigger (Opens Modal)
+    const handleApprove = (submission: Submission, finalXp?: number) => {
+        setApprovalModal({
+            submission,
+            finalXp: finalXp !== undefined ? finalXp : (submission.xpReward || 0),
+            type: 'individual'
+        });
+    };
+
+    const handleApproveBase = (submission: any, finalXp?: number) => {
+        setApprovalModal({
+            submission,
+            finalXp: finalXp !== undefined ? finalXp : (submission.xpReward || 0),
+            type: 'base'
+        });
+    };
+
+    // Final Execution (Called by Modal)
+    const executeApprove = async (submission: any, xpToAward: number, type: 'individual' | 'base') => {
         try {
-            const xpToAward = finalXp !== undefined ? finalXp : (submission.xpReward || 0);
-
-            // 1. Update submission status
-            await firestoreService.update("submissions", submission.id, {
-                status: "approved",
-                reviewedAt: new Date(),
-                awardedXp: xpToAward
-            });
-
-            // 2. Award XP to User (Root level 'xp')
-            if (submission.userId) {
-                const userRef = doc(db, "users", submission.userId);
-
-                // Update Stats
-                await updateDoc(userRef, {
-                    "stats.currentXp": increment(xpToAward),
-                    "stats.completedTasks": increment(1)
+            if (type === 'individual') {
+                // 1. Update submission status
+                await firestoreService.update("submissions", submission.id, {
+                    status: "approved",
+                    reviewedAt: new Date(),
+                    awardedXp: xpToAward
                 });
 
-                // 3. Add to XP History
-                if (xpToAward !== 0) {
-                    await addDoc(collection(db, "users", submission.userId, "xp_history"), {
-                        amount: xpToAward,
-                        reason: `Tarefa: ${submission.taskTitle}`,
-                        type: 'task',
-                        createdAt: serverTimestamp()
+                // 2. Award XP to User (Root level 'xp')
+                if (submission.userId) {
+                    const userRef = doc(db, "users", submission.userId);
+
+                    // Update Stats
+                    await updateDoc(userRef, {
+                        "stats.currentXp": increment(xpToAward),
+                        "stats.completedTasks": increment(1)
+                    });
+
+                    // 3. Add to XP History
+                    if (xpToAward !== 0) {
+                        await addDoc(collection(db, "users", submission.userId, "xp_history"), {
+                            amount: xpToAward,
+                            reason: `Tarefa: ${submission.taskTitle}`,
+                            type: 'task',
+                            createdAt: serverTimestamp()
+                        });
+                    }
+
+                    // 4. Update Base Stats (Global Ranking)
+                    if (submission.baseId) {
+                        const baseRef = doc(db, "bases", submission.baseId);
+                        await updateDoc(baseRef, {
+                            totalXp: increment(xpToAward)
+                        });
+                    }
+
+                    // 5. Create Notification
+                    await addDoc(collection(db, "notifications"), {
+                        userId: submission.userId,
+                        title: "Tarefa Aprovada! 🎉",
+                        message: `Sua prova para "${submission.taskTitle}" foi validada. Você ganhou ${xpToAward} XP!`,
+                        createdAt: new Date(),
+                        read: false,
+                        type: "success"
                     });
                 }
-
-                // 4. Update Base Stats (Global Ranking)
-                if (submission.baseId) {
-                    const baseRef = doc(db, "bases", submission.baseId);
-                    await updateDoc(baseRef, {
-                        totalXp: increment(xpToAward)
-                    });
-                }
-
-                // 5. Create Notification
-                await addDoc(collection(db, "notifications"), {
-                    userId: submission.userId,
-                    title: "Tarefa Aprovada! 🎉",
-                    message: `Sua prova para "${submission.taskTitle}" foi validada. Você ganhou ${xpToAward} XP!`,
-                    createdAt: new Date(),
-                    read: false,
-                    type: "success"
+            } else {
+                // Base Approval
+                // 1. Update submission status
+                await firestoreService.update("base_submissions", submission.id, {
+                    status: "approved",
+                    reviewedAt: new Date(),
+                    approvedBy: currentUser?.uid,
+                    awardedXp: xpToAward
                 });
 
-                alert(`Prova aprovada e ${xpToAward} XP concedido!`);
+                // 2. Update base stats (increment totalXp and completedTasks)
+                const baseRef = doc(db, "bases", submission.baseId);
+                await updateDoc(baseRef, {
+                    totalXp: increment(xpToAward),
+                    completedTasks: increment(1)
+                });
             }
+
+            setApprovalModal(null); // Close modal
+            // alert(`Aprovação confirmada com sucesso!`); // Optional feedback
         } catch (error) {
             console.error("Error approving submission:", error);
             alert("Erro ao aprovar prova.");
-        }
-    };
-
-    const handleApproveBase = async (submission: any, finalXp?: number) => {
-        try {
-            const xpToAward = finalXp !== undefined ? finalXp : (submission.xpReward || 0);
-
-            // 1. Update submission status
-            await firestoreService.update("base_submissions", submission.id, {
-                status: "approved",
-                reviewedAt: new Date(),
-                approvedBy: currentUser?.uid,
-                awardedXp: xpToAward
-            });
-
-            // 2. Update base stats (increment totalXp and completedTasks)
-            const baseRef = doc(db, "bases", submission.baseId);
-            await updateDoc(baseRef, {
-                totalXp: increment(xpToAward),
-                completedTasks: increment(1)
-            });
-
-            alert(`Prova da base aprovada! ${xpToAward} XP creditado à base.`);
-        } catch (error) {
-            console.error("Error approving base submission:", error);
-            alert("Erro ao aprovar prova da base.");
         }
     };
 
@@ -487,6 +498,65 @@ export default function ApprovalsPage() {
                         </p>
                     </div>
                 )
+            )}
+
+            {/* Approval Verification Modal */}
+            {approvalModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden scale-in-center">
+                        <div className="p-6 bg-primary text-white flex justify-between items-center">
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                <CheckCircle2 /> Confirmar Aprovação
+                            </h2>
+                            <button onClick={() => setApprovalModal(null)} className="text-white/80 hover:text-white">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="bg-surface p-4 rounded-xl border border-gray-100">
+                                <p className="text-xs font-bold text-text-secondary uppercase mb-1">Tarefa</p>
+                                <p className="font-bold text-lg text-text-primary">{approvalModal.submission.taskTitle || "Sem título"}</p>
+                            </div>
+
+                            <div className="bg-surface p-4 rounded-xl border border-gray-100">
+                                <p className="text-xs font-bold text-text-secondary uppercase mb-1">Evidência enviada</p>
+                                <div className="text-sm text-text-primary break-words whitespace-pre-wrap">
+                                    {approvalModal.submission.proof?.content}
+                                </div>
+                                {approvalModal.submission.proof?.content?.startsWith("http") && (
+                                    <div className="mt-3">
+                                        <a
+                                            href={approvalModal.submission.proof.content}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 text-primary font-bold bg-primary/10 p-2 rounded-lg hover:bg-primary/20 transition-colors w-fit"
+                                        >
+                                            <ExternalLink size={16} />
+                                            Abrir Anexo / Link
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between bg-green-50 p-4 rounded-xl border border-green-100">
+                                <span className="font-bold text-green-800">Pontuação a conceder:</span>
+                                <span className="text-xl font-black text-green-600">{approvalModal.finalXp} XP</span>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <Button variant="outline" className="flex-1" onClick={() => setApprovalModal(null)}>
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white border-none"
+                                    onClick={() => executeApprove(approvalModal.submission, approvalModal.finalXp, approvalModal.type)}
+                                >
+                                    Confirmar e Aprovar
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
