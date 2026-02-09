@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { useCollection, firestoreService } from "@/hooks/useFirestore";
-import { auth } from "@/services/firebase";
-import { where } from "firebase/firestore";
+import { auth, db } from "@/services/firebase";
+import { where, setDoc, doc } from "firebase/firestore";
 import { Button } from "@/components/ui/Button";
 import {
     Plus,
@@ -414,7 +414,10 @@ export default function TasksPage() {
                 data.userDisplayName = currentUser.displayName;
             }
 
-            await firestoreService.set(collectionName, submissionId, data);
+            // assertively overwrite the document to fix legacy/corrupted data issues
+            // (bypass merge: true which requires read permissions on potentially broken docs)
+            const submissionRef = doc(db, collectionName, submissionId);
+            await setDoc(submissionRef, { ...data, updatedAt: new Date() });
 
             alert("Prova enviada com sucesso! Aguarde a aprovação do coordenador.");
             setViewingTask(null);
