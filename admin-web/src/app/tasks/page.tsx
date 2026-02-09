@@ -414,9 +414,6 @@ export default function TasksPage() {
                 data.userDisplayName = currentUser.displayName;
             }
 
-            // DEBUG: Alert to check data being sent
-            alert(`DEBUG ENVIO:\nColeção: ${collectionName}\nID: ${submissionId}\nDados: ${JSON.stringify(data, null, 2)}`);
-
             await firestoreService.set(collectionName, submissionId, data);
 
             alert("Prova enviada com sucesso! Aguarde a aprovação do coordenador.");
