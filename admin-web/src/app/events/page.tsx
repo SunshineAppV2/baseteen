@@ -36,6 +36,8 @@ interface Event {
     status: 'draft' | 'open' | 'active' | 'finished';
     linkedQuizzes?: string[];
     createdAt?: any;
+    targetType?: 'individual' | 'base'; // New field
+    registrationType?: 'individual' | 'base'; // 'individual' (members register) or 'base' (base registers)
 }
 
 export default function EventsPage() {
@@ -54,7 +56,9 @@ export default function EventsPage() {
         endDate: "",
         endTime: "",
         location: "",
-        status: "draft" as Event['status']
+        status: "draft" as Event['status'],
+        targetType: "individual" as 'individual' | 'base', // Default to individual
+        registrationType: "individual" as 'individual' | 'base'
     });
 
     const isManager = ['master', 'coord_geral', 'admin', 'secretaria', 'coord_associacao', 'coord_uniao', 'coord_regiao', 'coord_distrital'].includes(user?.role || '') || user?.eventRole === 'admin' || user?.eventRole === 'editor';
@@ -71,7 +75,9 @@ export default function EventsPage() {
             endDate: "",
             endTime: "18:00",
             location: "",
-            status: "draft"
+            status: "draft",
+            targetType: "individual",
+            registrationType: "individual"
         });
         setIsModalOpen(true);
     };
@@ -104,7 +110,9 @@ export default function EventsPage() {
             endDate: endDateStr,
             endTime: endTimeStr,
             location: event.location || "",
-            status: event.status
+            status: event.status,
+            targetType: event.targetType || "individual",
+            registrationType: event.registrationType || "individual"
         });
         setIsModalOpen(true);
     };
@@ -120,27 +128,37 @@ export default function EventsPage() {
     };
 
     const handleSave = async () => {
-        if (!formData.title || !formData.startDate || !formData.endDate) return alert("Preencha título e datas!");
+        if (!formData.title || !formData.startDate || !formData.endDate) {
+            alert("Preencha título e datas!");
+            return;
+        }
 
         try {
             // Combine Date + Time
             const startObj = new Date(`${formData.startDate}T${formData.startTime || '00:00'}`);
             const endObj = new Date(`${formData.endDate}T${formData.endTime || '23:59'}`);
 
-            if (endObj < startObj) return alert("A data final deve ser maior que a inicial.");
+            if (endObj < startObj) {
+                alert("A data final deve ser maior que a inicial.");
+                return;
+            }
 
-            const payload = {
+            const payload: any = {
                 title: formData.title,
                 description: formData.description,
                 startDate: Timestamp.fromDate(startObj),
                 endDate: Timestamp.fromDate(endObj),
                 location: formData.location,
                 status: formData.status,
-                updatedAt: serverTimestamp()
+                targetType: formData.targetType,
+                registrationType: formData.registrationType
             };
 
             if (editingId) {
-                await firestoreService.update("events", editingId, payload);
+                await firestoreService.update("events", editingId, {
+                    ...payload,
+                    updatedAt: serverTimestamp()
+                });
                 alert("Evento atualizado!");
             } else {
                 await firestoreService.add("events", {
@@ -371,6 +389,60 @@ export default function EventsPage() {
                                         <option value="finished">Encerrado</option>
                                     </select>
                                 </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">Tipo de Ranking</label>
+                                    <select
+                                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 font-medium text-gray-700 focus:border-primary/50 outline-none"
+                                        value={formData.targetType}
+                                        onChange={e => {
+                                            const newType = e.target.value as any;
+                                            setFormData({
+                                                ...formData,
+                                                targetType: newType,
+                                                registrationType: newType === 'individual' ? 'individual' : formData.registrationType // Reset if individual
+                                            });
+                                        }}
+                                    >
+                                        <option value="individual">Individual (Adolescentes)</option>
+                                        <option value="base">Por Base (Coletivo)</option>
+                                    </select>
+                                </div>
+
+                                {formData.targetType === 'base' && (
+                                    <div className="animate-fade-in">
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 text-blue-600">Tipo de Inscrição</label>
+                                        <div className="flex gap-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="registrationType"
+                                                    value="individual"
+                                                    checked={formData.registrationType === 'individual'}
+                                                    onChange={e => setFormData({ ...formData, registrationType: 'individual' })}
+                                                    className="accent-blue-600 w-4 h-4"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Membros se Inscrevem (Soma Pontos)</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="registrationType"
+                                                    value="base"
+                                                    checked={formData.registrationType === 'base'}
+                                                    onChange={e => setFormData({ ...formData, registrationType: 'base' })}
+                                                    className="accent-blue-600 w-4 h-4"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Base se Inscreve (Direta)</span>
+                                            </label>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1 ml-1">
+                                            {formData.registrationType === 'individual'
+                                                ? "A pontuação da base será a soma dos pontos dos membros inscritos."
+                                                : "A base participa como uma entidade única. Um representante deve registrar a base."}
+                                        </p>
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">Descrição</label>
