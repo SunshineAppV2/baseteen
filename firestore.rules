@@ -283,8 +283,8 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.status == 'pending';
                     
-      allow update: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data) ||
-                    (isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.status == 'pending');
+      allow update: if (isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.status == 'pending') ||
+                    isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
       
       allow delete: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
     }
