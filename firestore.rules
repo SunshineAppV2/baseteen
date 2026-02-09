@@ -283,7 +283,10 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.status == 'pending';
                     
-      allow update, delete: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
+      allow update: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data) ||
+                    (isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.status == 'pending');
+      
+      allow delete: if isOwnerOrAdmin() || isSecretary() || canManageArea(resource.data);
     }
 
     // BASE SUBMISSIONS (Provas Coletivas de Bases)

@@ -9,7 +9,7 @@ export const firebaseConfig = {
     apiKey: "AIzaSyD0dbtZXKTdQGFw5A5AJ7b6aNeiww4W6l8",
     authDomain: "baseteen-14dd5.firebaseapp.com",
     projectId: "baseteen-14dd5",
-    storageBucket: "baseteen-14dd5.firebasestorage.app",
+    storageBucket: "baseteen-14dd5.appspot.com",
     messagingSenderId: "555602992770",
     appId: "1:555602992770:web:5b9427374fefe211059e9b",
     measurementId: "G-0V6L5KKJPT",
