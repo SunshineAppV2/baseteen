@@ -130,6 +130,16 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
     const [approvalVerificationModal, setApprovalVerificationModal] = useState<BaseSubmission | null>(null);
 
+    // Cache for Base Names
+    const [baseNames, setBaseNames] = useState<Record<string, string>>({});
+
+    const cleanEvidenceText = (text: string) => {
+        if (!text) return "";
+        let cleaned = text.split('http')[0].trim();
+        cleaned = cleaned.replace(/Arquivo:?$/, "").replace(/Link:?$/, "").trim();
+        return cleaned || text;
+    };
+
     // Rota/Soul+ Logic (Base Registration Only)
     const isBaseRegistrationOnly = event?.registrationType === 'base' || event?.title?.toLowerCase().includes('rota ga') || event?.title?.toLowerCase().includes('soul');
 
@@ -163,6 +173,35 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const { data: allSubmissions } = useCollection<BaseSubmission>("base_submissions",
         isManager ? [where("eventId", "==", eventId)] : []
     );
+
+    useEffect(() => {
+        const fetchBaseNames = async () => {
+            const pendingSubmissions = allSubmissions?.filter(s => s.status === 'pending') || [];
+            const missingIds = Array.from(new Set(pendingSubmissions
+                .map(s => s.baseId)
+                .filter(id => id && !baseNames[id])
+            )) as string[];
+
+            if (missingIds.length > 0) {
+                const batchNames: Record<string, string> = {};
+                for (const id of missingIds) {
+                    try {
+                        const baseSnap = await getDoc(doc(db, "bases", id));
+                        if (baseSnap.exists()) {
+                            batchNames[id] = baseSnap.data().name;
+                        }
+                    } catch (e) {
+                        console.error("Error fetching base", id, e);
+                    }
+                }
+                if (Object.keys(batchNames).length > 0) {
+                    setBaseNames(prev => ({ ...prev, ...batchNames }));
+                }
+            }
+        };
+        fetchBaseNames();
+    }, [allSubmissions]);
+
     const [selectedTaskForSubmission, setSelectedTaskForSubmission] = useState<EventTask | null>(null);
     const [submissionData, setSubmissionData] = useState({ text: "", link: "", completed: false });
     const [isUploading, setIsUploading] = useState(false);
@@ -1044,7 +1083,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                             <div key={sub.id} className="p-4 border border-orange-100 bg-orange-50/30 rounded-xl">
                                                 <div className="flex justify-between items-start mb-2">
                                                     <div>
-                                                        <p className="font-bold text-gray-800">{sub.baseName}</p>
+                                                        <p className="font-bold text-gray-800">{baseNames[sub.baseId!] || sub.baseName}</p>
                                                         <p className="text-xs text-gray-500">{task?.title || 'Desafio desconhecido'}</p>
                                                     </div>
                                                     <span className="font-bold text-orange-600">{sub.xpReward} XP</span>
@@ -1053,7 +1092,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                                     <span className="font-bold text-xs uppercase text-gray-400 block mb-1">Evidência:</span>
                                                     {sub.proof.content.includes('http') ? (
                                                         <div className="flex flex-col gap-1">
-                                                            <div className="whitespace-pre-wrap">{sub.proof.content}</div>
+                                                            <div className="whitespace-pre-wrap">{cleanEvidenceText(sub.proof.content)}</div>
                                                             <a
                                                                 href={sub.proof.content.split('http').pop() ? 'http' + sub.proof.content.split('http').pop()?.split(' ')[0]?.split('\n')[0] : sub.proof.content}
                                                                 target="_blank"
@@ -1499,13 +1538,13 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                         <div className="p-6 space-y-4">
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                                 <p className="text-xs font-bold text-gray-400 uppercase mb-1">Base / Grupo</p>
-                                <p className="font-bold text-lg text-gray-900">{approvalVerificationModal.baseName}</p>
+                                <p className="font-bold text-lg text-gray-900">{baseNames[approvalVerificationModal.baseId!] || approvalVerificationModal.baseName}</p>
                             </div>
 
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                                 <p className="text-xs font-bold text-gray-400 uppercase mb-1">Evidência enviada</p>
                                 <div className="text-sm text-gray-700 break-words whitespace-pre-wrap">
-                                    {approvalVerificationModal.proof?.content}
+                                    {cleanEvidenceText(approvalVerificationModal.proof?.content || "")}
                                 </div>
                                 {approvalVerificationModal.proof?.content?.includes("http") && (
                                     <div className="mt-4">

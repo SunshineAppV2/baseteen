@@ -56,6 +56,13 @@ interface Submission {
 
 import { useAuth } from "@/context/AuthContext";
 
+const cleanEvidenceText = (text: string) => {
+    if (!text) return "";
+    let cleaned = text.split('http')[0].trim();
+    cleaned = cleaned.replace(/Arquivo:?$/, "").replace(/Link:?$/, "").trim();
+    return cleaned || text;
+};
+
 export default function ApprovalsPage() {
     const { user: currentUser } = useAuth();
 
@@ -521,7 +528,7 @@ export default function ApprovalsPage() {
                             <div className="bg-surface p-4 rounded-xl border border-gray-100">
                                 <p className="text-xs font-bold text-text-secondary uppercase mb-1">Evidência enviada</p>
                                 <div className="text-sm text-text-primary break-words whitespace-pre-wrap">
-                                    {approvalModal.submission.proof?.content}
+                                    {cleanEvidenceText(approvalModal.submission.proof?.content || "")}
                                 </div>
                                 {approvalModal.submission.proof?.content?.includes("http") && (
                                     <div className="mt-3">
@@ -650,7 +657,7 @@ function SubmissionCard({ submission, onApprove, onReject, onRevoke }: { submiss
                         {submission.taskTitle || "Link/Foto do Desafio"}
                     </h4>
                     <p className="text-sm text-text-secondary break-all">
-                        {submission.proof.content}
+                        {cleanEvidenceText(submission.proof.content)}
                     </p>
                     {submission.proof.content.includes("http") && (
                         <a
@@ -816,7 +823,7 @@ function BaseSubmissionCard({ submission, onApprove, onReject, onRevoke }: { sub
                         {taskTitle}
                     </h4>
                     <p className="text-sm text-text-secondary break-all">
-                        {submission.proof.content}
+                        {cleanEvidenceText(submission.proof.content)}
                     </p>
                     {submission.proof.content.includes("http") && (
                         <a
