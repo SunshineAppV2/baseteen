@@ -1049,10 +1049,17 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                                 </div>
                                                 <div className="bg-white p-3 rounded border border-gray-100 text-sm text-gray-600 mb-3">
                                                     <span className="font-bold text-xs uppercase text-gray-400 block mb-1">Evidência:</span>
-                                                    {sub.proof.content.startsWith('http') ? (
-                                                        <a href={sub.proof.content} target="_blank" className="text-blue-600 underline flex items-center gap-1">
-                                                            <LinkIcon size={12} /> Abrir Link / Arquivo
-                                                        </a>
+                                                    {sub.proof.content.includes('http') ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="whitespace-pre-wrap">{sub.proof.content}</div>
+                                                            <a
+                                                                href={sub.proof.content.split('http').pop() ? 'http' + sub.proof.content.split('http').pop()?.split(' ')[0]?.split('\n')[0] : sub.proof.content}
+                                                                target="_blank"
+                                                                className="text-blue-600 underline flex items-center gap-1 font-bold mt-2"
+                                                            >
+                                                                <LinkIcon size={12} /> Abrir Link / Arquivo
+                                                            </a>
+                                                        </div>
                                                     ) : sub.proof.content}
                                                 </div>
                                                 <div className="flex gap-2 justify-end">

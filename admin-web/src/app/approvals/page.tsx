@@ -523,10 +523,10 @@ export default function ApprovalsPage() {
                                 <div className="text-sm text-text-primary break-words whitespace-pre-wrap">
                                     {approvalModal.submission.proof?.content}
                                 </div>
-                                {approvalModal.submission.proof?.content?.startsWith("http") && (
+                                {approvalModal.submission.proof?.content?.includes("http") && (
                                     <div className="mt-3">
                                         <a
-                                            href={approvalModal.submission.proof.content}
+                                            href={approvalModal.submission.proof.content.split('http').pop() ? 'http' + approvalModal.submission.proof.content.split('http').pop()?.split(' ')[0]?.split('\n')[0] : approvalModal.submission.proof.content}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="flex items-center gap-2 text-primary font-bold bg-primary/10 p-2 rounded-lg hover:bg-primary/20 transition-colors w-fit"
@@ -652,9 +652,9 @@ function SubmissionCard({ submission, onApprove, onReject, onRevoke }: { submiss
                     <p className="text-sm text-text-secondary break-all">
                         {submission.proof.content}
                     </p>
-                    {submission.proof.content.startsWith("http") && (
+                    {submission.proof.content.includes("http") && (
                         <a
-                            href={submission.proof.content}
+                            href={submission.proof.content.split('http').pop() ? 'http' + submission.proof.content.split('http').pop()?.split(' ')[0]?.split('\n')[0] : submission.proof.content}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-primary font-bold mt-2 hover:underline"
@@ -818,9 +818,9 @@ function BaseSubmissionCard({ submission, onApprove, onReject, onRevoke }: { sub
                     <p className="text-sm text-text-secondary break-all">
                         {submission.proof.content}
                     </p>
-                    {submission.proof.content.startsWith("http") && (
+                    {submission.proof.content.includes("http") && (
                         <a
-                            href={submission.proof.content}
+                            href={submission.proof.content.split('http').pop() ? 'http' + submission.proof.content.split('http').pop()?.split(' ')[0]?.split('\n')[0] : submission.proof.content}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-primary font-bold mt-2 hover:underline"
