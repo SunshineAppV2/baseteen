@@ -18,6 +18,7 @@ import {
     Share2,
     Gamepad,
     Link as LinkIcon,
+    ExternalLink,
     X,
     AlertCircle,
     UploadCloud, // Added
@@ -126,6 +127,8 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
     const isManager = user?.role === 'master' || user?.role === 'coord_geral' || user?.role === 'admin' || user?.role === 'secretaria' || user?.role === 'coord_associacao';
     const isBaseCoord = user?.role === 'coord_base';
+
+    const [approvalVerificationModal, setApprovalVerificationModal] = useState<BaseSubmission | null>(null);
 
     // Rota/Soul+ Logic (Base Registration Only)
     const isBaseRegistrationOnly = event?.registrationType === 'base' || event?.title?.toLowerCase().includes('rota ga') || event?.title?.toLowerCase().includes('soul');
@@ -458,7 +461,6 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
 
     // Approval Logic
     const handleApproveSubmission = async (submission: BaseSubmission) => {
-        if (!confirm(`Aprovar envio de ${submission.baseName}?`)) return;
         try {
             await firestoreService.update("base_submissions", submission.id, {
                 status: 'approved',
@@ -1064,7 +1066,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                                 </div>
                                                 <div className="flex gap-2 justify-end">
                                                     <Button size="sm" variant="ghost" onClick={() => handleRejectSubmission(sub)} className="text-red-600 hover:bg-red-50">Reprovar</Button>
-                                                    <Button size="sm" onClick={() => handleApproveSubmission(sub)} className="bg-green-600 hover:bg-green-700 text-white border-none">Aprovar</Button>
+                                                    <Button size="sm" onClick={() => setApprovalVerificationModal(sub)} className="bg-green-600 hover:bg-green-700 text-white border-none">Aprovar</Button>
                                                 </div>
                                             </div>
                                         );
@@ -1482,6 +1484,67 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                     </div>
                 )
             }
+            {/* Approval Verification Modal (Manager) */}
+            {approvalVerificationModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden scale-in-center">
+                        <div className="p-6 bg-green-600 text-white flex justify-between items-center">
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                <CheckCircle2 /> Confirmar Aprovação
+                            </h2>
+                            <button onClick={() => setApprovalVerificationModal(null)} className="text-white/80 hover:text-white">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Base / Grupo</p>
+                                <p className="font-bold text-lg text-gray-900">{approvalVerificationModal.baseName}</p>
+                            </div>
+
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Evidência enviada</p>
+                                <div className="text-sm text-gray-700 break-words whitespace-pre-wrap">
+                                    {approvalVerificationModal.proof?.content}
+                                </div>
+                                {approvalVerificationModal.proof?.content?.includes("http") && (
+                                    <div className="mt-4">
+                                        <a
+                                            href={approvalVerificationModal.proof.content.split('http').pop() ? 'http' + approvalVerificationModal.proof.content.split('http').pop()?.split(' ')[0]?.split('\n')[0] : approvalVerificationModal.proof.content}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 text-green-700 font-bold bg-green-50 p-3 rounded-xl hover:bg-green-100 transition-colors w-full justify-center border border-green-200"
+                                        >
+                                            <ExternalLink size={18} />
+                                            Abrir Anexo / Link
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between bg-green-50 p-4 rounded-2xl border border-green-100">
+                                <span className="font-bold text-green-800">Recompensa:</span>
+                                <span className="text-xl font-black text-green-600">{approvalVerificationModal.xpReward} XP</span>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <Button variant="outline" className="flex-1 rounded-xl h-12" onClick={() => setApprovalVerificationModal(null)}>
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white border-none rounded-xl h-12 shadow-lg shadow-green-600/20"
+                                    onClick={() => {
+                                        handleApproveSubmission(approvalVerificationModal);
+                                        setApprovalVerificationModal(null);
+                                    }}
+                                >
+                                    Confirmar e Aprovar
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }
