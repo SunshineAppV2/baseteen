@@ -249,25 +249,29 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                     const snapAll = await getDocs(qAll);
                     setTotalRegistrations(snapAll.size);
 
-                    // Group by Base
-                    // Optimization: We might have many bases, so let's collect unique Base IDs first
                     const registrations = snapAll.docs.map(doc => ({ id: doc.id, ...doc.data() } as Registration));
-                    const baseIds = new Set<string>();
+                    const baseIds = Array.from(new Set(registrations.map(r => r.baseId).filter(id => !!id))) as string[];
+
+                    // Fetch base names for the report
+                    const resolvedNames: Record<string, string> = {};
+                    for (const bid of baseIds) {
+                        try {
+                            const bSnap = await getDoc(doc(db, "bases", bid));
+                            if (bSnap.exists()) {
+                                resolvedNames[bid] = bSnap.data().name;
+                            }
+                        } catch (e) {
+                            console.error("Err fetch base name", bid, e);
+                        }
+                    }
+
+                    if (Object.keys(resolvedNames).length > 0) {
+                        setBaseNames(prev => ({ ...prev, ...resolvedNames }));
+                    }
 
                     const grouped: Record<string, Registration[]> = {};
-
-                    // We need to resolve base names. Some registrations might have it, some might need fetching.
-                    // To avoid N+1 reads, let's just make a map of baseId -> baseName if we can, or rely on what's in registration.
-
-                    // Strategy: Use what is in registration 'baseName'. If missing, falback to ID.
-                    // Ideally we should fix data at source (which we did in previous step). 
-                    // But for display fix NOW without migrations:
-
-                    // Let's settle for fixing the "future" data with the previous step. 
-                    // But to fix the "view" right now for records that have ID but no Name or partial name:
-
                     registrations.forEach(data => {
-                        const bName = data.baseName || `Base ${data.baseId?.substring(0, 5)}...`;
+                        const bName = resolvedNames[data.baseId] || data.baseName || `Base ${data.baseId?.substring(0, 5)}...`;
                         if (!grouped[bName]) grouped[bName] = [];
                         grouped[bName].push(data);
                     });
