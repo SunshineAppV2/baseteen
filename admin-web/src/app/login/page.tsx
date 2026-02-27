@@ -360,7 +360,9 @@ function LoginContent() {
                                                 <ShieldCheck size={16} className="text-green-600" />
                                             </div>
                                             <div className="space-y-1">
-                                                <p className="text-sm font-black text-green-900">Seja bem-vindo, Coordenador!</p>
+                                                <p className="text-sm font-black text-green-900">
+                                                    Seja bem-vindo, {targetRole === 'coord_regiao' ? 'Coordenador Regional' : 'Coordenador Distrital'}!
+                                                </p>
                                                 <p className="text-xs leading-relaxed text-green-800 font-medium">
                                                     Seu acesso já está garantido pelo seu campo. Complete seus dados para começar.
                                                 </p>
