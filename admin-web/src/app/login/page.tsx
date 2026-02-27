@@ -132,6 +132,14 @@ function LoginContent() {
         }
     }, [searchParams]);
 
+    // Set defaults for coordinators
+    useEffect(() => {
+        if (isCoordinator) {
+            setBillingPlan("anual");
+            setAccessQuantity(1);
+        }
+    }, [isCoordinator]);
+
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
@@ -441,37 +449,41 @@ function LoginContent() {
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-2">
-                                                <label className="text-sm font-medium text-text-secondary ml-1">Acessos</label>
-                                                <div className="relative">
-                                                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" size={20} />
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        required
-                                                        value={accessQuantity}
-                                                        onChange={(e) => setAccessQuantity(parseInt(e.target.value))}
-                                                        className="w-full bg-surface border border-gray-100 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-                                                    />
+                                            {!isCoordinator && (
+                                                <div className="space-y-2">
+                                                    <label className="text-sm font-medium text-text-secondary ml-1">Acessos</label>
+                                                    <div className="relative">
+                                                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" size={20} />
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            required
+                                                            value={accessQuantity}
+                                                            onChange={(e) => setAccessQuantity(parseInt(e.target.value))}
+                                                            className="w-full bg-surface border border-gray-100 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
+                                                        />
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-text-secondary ml-1">Forma de Pagamento</label>
-                                            <div className="relative">
-                                                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" size={20} />
-                                                <select
-                                                    value={billingPlan}
-                                                    onChange={(e) => setBillingPlan(e.target.value as any)}
-                                                    className="w-full bg-surface border border-gray-100 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium appearance-none"
-                                                >
-                                                    <option value="mensal">Mensal</option>
-                                                    <option value="trimestral">Trimestral</option>
-                                                    <option value="anual">Anual</option>
-                                                </select>
+                                        {!isCoordinator && (
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-text-secondary ml-1">Forma de Pagamento</label>
+                                                <div className="relative">
+                                                    <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" size={20} />
+                                                    <select
+                                                        value={billingPlan}
+                                                        onChange={(e) => setBillingPlan(e.target.value as any)}
+                                                        className="w-full bg-surface border border-gray-100 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium appearance-none"
+                                                    >
+                                                        <option value="mensal">Mensal</option>
+                                                        <option value="trimestral">Trimestral</option>
+                                                        <option value="anual">Anual</option>
+                                                    </select>
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                     </div>
                                 )}
                             </>
