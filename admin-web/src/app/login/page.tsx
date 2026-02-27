@@ -168,11 +168,11 @@ function LoginContent() {
                 if (!hasLocation) return setError("Por favor, selecione ou cadastre sua Região e Distrito.");
             } else {
                 // Default (Membro/Coord Base)
-                hasLocation = (unionId || customUnion) &&
-                    (associationId || customAssociation) &&
-                    (regionId || customRegion) &&
-                    (districtId || customDistrict) &&
-                    (baseId || customBase);
+                hasLocation = !!(unionId || customUnion) &&
+                    !!(associationId || customAssociation) &&
+                    !!(regionId || customRegion) &&
+                    !!(districtId || customDistrict) &&
+                    !!(baseId || customBase);
 
                 if (!hasLocation) {
                     return setError("Por favor, selecione ou cadastre sua localização completa.");
