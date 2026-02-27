@@ -107,7 +107,7 @@ service cloud.firestore {
                     canManageArea(request.resource.data) ||
                     // Self-registration (if enabled/applicable logic)
                     (request.auth.uid == userId && 
-                      (request.resource.data.role in ['membro', 'coord_regiao', 'coord_distrital'] || request.auth.token.email == 'master@baseteen.com'));
+                      (request.resource.data.role in ['membro', 'coord_regiao', 'coord_distrital', 'coord_base'] || request.auth.token.email == 'master@baseteen.com'));
       
       
       // Update: Dono, Secretaria, Coord da área ou o próprio usuário

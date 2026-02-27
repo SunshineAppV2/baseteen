@@ -61,7 +61,10 @@ function LoginContent() {
     const [districtId, setDistrictId] = useState("");
     const [baseId, setBaseId] = useState("");
     const [targetRole, setTargetRole] = useState("membro");
-    const isCoordinator = targetRole === 'coord_regiao' || targetRole === 'coord_distrital';
+    const isCoordinator =
+        targetRole === 'coord_regiao' ||
+        targetRole === 'coord_distrital' ||
+        (targetRole === 'coord_base' && searchParams.get('sponsored') === 'true');
 
     // Custom names for new entities
     const [customUnion, setCustomUnion] = useState("");
@@ -361,7 +364,11 @@ function LoginContent() {
                                             </div>
                                             <div className="space-y-1">
                                                 <p className="text-sm font-black text-green-900">
-                                                    Seja bem-vindo, {targetRole === 'coord_regiao' ? 'Coordenador Regional' : 'Coordenador Distrital'}!
+                                                    Seja bem-vindo, {
+                                                        targetRole === 'coord_regiao' ? 'Coordenador Regional' :
+                                                            targetRole === 'coord_distrital' ? 'Coordenador Distrital' :
+                                                                'Coordenador de Base'
+                                                    }!
                                                 </p>
                                                 <p className="text-xs leading-relaxed text-green-800 font-medium">
                                                     Seu acesso já está garantido pelo seu campo. Complete seus dados para começar.

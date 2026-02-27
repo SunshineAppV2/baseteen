@@ -176,7 +176,7 @@ export default function UsersPage() {
     const [copiedInviteRole, setCopiedInviteRole] = useState<string | null>(null);
     const [inviteAssociationId, setInviteAssociationId] = useState("");
 
-    const handleCopyInvite = (role?: string) => {
+    const handleCopyInvite = (role?: string, sponsored?: boolean) => {
         if (!currentUser) return;
 
         const baseUrl = window.location.origin + "/login";
@@ -198,6 +198,10 @@ export default function UsersPage() {
             }
         }
 
+        if (sponsored) {
+            params.set('sponsored', 'true');
+        }
+
         const currentBase = bases.find(b => b.id === currentUser.baseId);
         if (!role && currentBase && (currentBase as any).program) {
             params.append('program', (currentBase as any).program);
@@ -205,7 +209,7 @@ export default function UsersPage() {
 
         const link = `${baseUrl}?${params.toString()}`;
         navigator.clipboard.writeText(link);
-        setCopiedInviteRole(role || "membro");
+        setCopiedInviteRole(sponsored ? `${role}_sponsored` : (role || "membro"));
         setTimeout(() => setCopiedInviteRole(null), 2000);
     };
 
@@ -630,17 +634,31 @@ export default function UsersPage() {
                                         {copiedInviteRole === "coord_distrital" ? "Copiado!" : "Link Distrital"}
                                     </Button>
                                     {['master', 'coord_geral', 'coord_uniao', 'coord_associacao'].includes(currentUser?.role || '') && (
-                                        <Button
-                                            onClick={() => handleCopyInvite('coord_regiao')}
-                                            variant="outline"
-                                            className={clsx(
-                                                "flex items-center gap-2 border-teal-500 transition-all",
-                                                copiedInviteRole === "coord_regiao" ? "bg-teal-50 text-teal-600 border-teal-600" : "text-teal-600 hover:bg-teal-50"
-                                            )}
-                                        >
-                                            {copiedInviteRole === "coord_regiao" ? <CheckCircle size={20} /> : <Share2 size={20} />}
-                                            {copiedInviteRole === "coord_regiao" ? "Copiado!" : "Link Regional"}
-                                        </Button>
+                                        <>
+                                            <Button
+                                                onClick={() => handleCopyInvite('coord_regiao')}
+                                                variant="outline"
+                                                className={clsx(
+                                                    "flex items-center gap-2 border-teal-500 transition-all",
+                                                    copiedInviteRole === "coord_regiao" ? "bg-teal-50 text-teal-600 border-teal-600" : "text-teal-600 hover:bg-teal-50"
+                                                )}
+                                            >
+                                                {copiedInviteRole === "coord_regiao" ? <CheckCircle size={20} /> : <Share2 size={20} />}
+                                                {copiedInviteRole === "coord_regiao" ? "Copiado!" : "Link Regional"}
+                                            </Button>
+
+                                            <Button
+                                                onClick={() => handleCopyInvite('coord_base', true)}
+                                                variant="outline"
+                                                className={clsx(
+                                                    "flex items-center gap-2 border-primary transition-all",
+                                                    copiedInviteRole === "coord_base_sponsored" ? "bg-green-50 text-green-600 border-green-600" : "text-primary hover:bg-primary/5"
+                                                )}
+                                            >
+                                                {copiedInviteRole === "coord_base_sponsored" ? <CheckCircle size={20} /> : <Share2 size={20} />}
+                                                {copiedInviteRole === "coord_base_sponsored" ? "Copiado!" : "Link Coord. Base (Patrocinado)"}
+                                            </Button>
+                                        </>
                                     )}
                                 </>
                             )}
