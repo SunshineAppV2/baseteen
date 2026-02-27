@@ -25,8 +25,10 @@ import {
     MapPin,
     Users,
     ChevronLeft,
-    Home
+    Home,
+    ShieldCheck
 } from "lucide-react";
+import { clsx } from "clsx";
 
 interface Union { id: string; name: string; }
 interface Association { id: string; name: string; unionId: string; }
@@ -59,6 +61,7 @@ function LoginContent() {
     const [districtId, setDistrictId] = useState("");
     const [baseId, setBaseId] = useState("");
     const [targetRole, setTargetRole] = useState("membro");
+    const isCoordinator = targetRole === 'coord_regiao' || targetRole === 'coord_distrital';
 
     // Custom names for new entities
     const [customUnion, setCustomUnion] = useState("");
@@ -187,6 +190,13 @@ function LoginContent() {
                 if (!limitCheck.canAdd) {
                     return setError(`Esta base já atingiu o limite de membros (${limitCheck.currentCount}/${limitCheck.memberLimit}). Entre em contato com seu coordenador.`);
                 }
+            }
+
+            // If not coordinator, go to payment step
+            if (!isCoordinator) {
+                setStep(3);
+                setLoading(false);
+                return;
             }
         }
 
@@ -320,6 +330,21 @@ function LoginContent() {
                             </>
                         ) : step === 1 ? (
                             <>
+                                {isCoordinator && (
+                                    <div className="bg-green-50/50 p-4 rounded-2xl border border-green-100 mb-6 animate-fade-in text-left">
+                                        <div className="flex gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                                                <ShieldCheck size={16} className="text-green-600" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <p className="text-sm font-black text-green-900">Seja bem-vindo, Coordenador!</p>
+                                                <p className="text-xs leading-relaxed text-green-800 font-medium">
+                                                    Seu acesso já está garantido e patrocinado pelo sistema. Complete seus dados para começar.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-text-secondary ml-1">Nome Completo</label>
                                     <div className="relative">
@@ -516,7 +541,7 @@ function LoginContent() {
                                         </div>
 
                                         {/* 1. UNIÃO */}
-                                        <div className="space-y-1">
+                                        <div className={clsx("space-y-1", (unionId && !isManualUnion && isCoordinator) && "hidden")}>
                                             <div className="flex justify-between items-center px-1">
                                                 <label className="text-xs font-medium text-text-secondary italic">1. Selecione sua União</label>
                                                 <button
@@ -564,7 +589,7 @@ function LoginContent() {
 
                                         {/* 2. ASSOCIAÇÃO */}
                                         {(unionId || isManualUnion) && (
-                                            <div className="space-y-1 animate-fade-in shadow-sm p-3 rounded-2xl bg-gray-50/50 border border-gray-100/50">
+                                            <div className={clsx("space-y-1 animate-fade-in shadow-sm p-3 rounded-2xl bg-gray-50/50 border border-gray-100/50", (associationId && !isManualAssociation && isCoordinator) && "hidden")}>
                                                 <div className="flex justify-between items-center px-1">
                                                     <label className="text-xs font-medium text-text-secondary italic">2. Selecione sua Associação</label>
                                                     <button
@@ -768,18 +793,25 @@ function LoginContent() {
                                     <>
                                         Entrar <ArrowRight size={20} className="ml-2" />
                                     </>
-                                ) : (isInvited || step === 2) ? (
+                                ) : (isInvited || (step === 2 && isCoordinator)) ? (
                                     <>
                                         Concluir Cadastro <UserPlus size={20} className="ml-2" />
                                     </>
                                 ) : (
                                     <>
-                                        Avançar <ArrowRight size={20} className="ml-2" />
+                                        {step === 2 ? "Avançar" : "Próximo Passo"} <ArrowRight size={20} className="ml-2" />
                                     </>
                                 )}
                             </>
                         )}
                     </Button>
+
+                    <div className="mt-4 text-center">
+                        <p className="text-[11px] text-text-secondary flex items-center justify-center gap-2 font-medium">
+                            <ShieldCheck size={14} className={isCoordinator ? "text-green-500" : "text-blue-500"} />
+                            {isCoordinator ? "Acesso Patrocinado e Garantido" : "Ambiente Seguro e Criptografado"}
+                        </p>
+                    </div>
 
                     <div className="text-center">
                         <button

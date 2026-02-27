@@ -583,11 +583,14 @@ export default function UsersPage() {
                             <div className="flex items-center gap-2">
                                 <Shield size={16} className="text-gray-400" />
                                 <select
-                                    className="text-xs border-none bg-transparent font-bold text-gray-600 focus:ring-0 cursor-pointer"
+                                    className={clsx(
+                                        "text-xs border-none bg-transparent font-bold focus:ring-0 cursor-pointer",
+                                        inviteAssociationId ? "text-primary" : "text-gray-400"
+                                    )}
                                     value={inviteAssociationId}
                                     onChange={(e) => setInviteAssociationId(e.target.value)}
                                 >
-                                    <option value="">Assoc. Automática</option>
+                                    <option value="">+ Selecionar Associação</option>
                                     {associations.map(a => (
                                         <option key={a.id} value={a.id}>{a.name}</option>
                                     ))}
