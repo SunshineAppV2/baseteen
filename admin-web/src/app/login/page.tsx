@@ -349,6 +349,10 @@ function LoginContent() {
                                                 <p className="text-xs leading-relaxed text-green-800 font-medium">
                                                     Seu acesso já está garantido e patrocinado pelo sistema. Complete seus dados para começar.
                                                 </p>
+                                                <p className="text-[10px] font-bold text-green-600 mt-1 flex items-center gap-1">
+                                                    <ShieldCheck size={12} />
+                                                    Garantido pela Associação/Campo
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
