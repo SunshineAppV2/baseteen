@@ -347,11 +347,7 @@ function LoginContent() {
                                             <div className="space-y-1">
                                                 <p className="text-sm font-black text-green-900">Seja bem-vindo, Coordenador!</p>
                                                 <p className="text-xs leading-relaxed text-green-800 font-medium">
-                                                    Seu acesso já está garantido e patrocinado pelo sistema. Complete seus dados para começar.
-                                                </p>
-                                                <p className="text-[10px] font-bold text-green-600 mt-1 flex items-center gap-1">
-                                                    <ShieldCheck size={12} />
-                                                    Garantido pela Associação/Campo
+                                                    Seu acesso já está garantido pelo seu campo. Complete seus dados para começar.
                                                 </p>
                                             </div>
                                         </div>
