@@ -86,18 +86,33 @@ function LoginContent() {
 
     const router = useRouter();
 
-    // Filtered Lists
+    // Filtered & Sorted Lists
+    const sortedUnions = useMemo(() =>
+        [...unions].sort((a, b) => a.name.localeCompare(b.name)), [unions]);
+
     const filteredAssociations = useMemo(() =>
-        associations.filter(a => a.unionId === unionId), [associations, unionId]);
+        associations
+            .filter(a => a.unionId === unionId)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        [associations, unionId]);
 
     const filteredRegions = useMemo(() =>
-        regions.filter(r => r.associationId === associationId), [regions, associationId]);
+        regions
+            .filter(r => r.associationId === associationId)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        [regions, associationId]);
 
     const filteredDistricts = useMemo(() =>
-        districts.filter(d => d.regionId === regionId), [districts, regionId]);
+        districts
+            .filter(d => d.regionId === regionId)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        [districts, regionId]);
 
     const filteredBases = useMemo(() =>
-        bases.filter(b => b.districtId === districtId), [bases, districtId]);
+        bases
+            .filter(b => b.districtId === districtId)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        [bases, districtId]);
 
     const invitedBaseName = useMemo(() => {
         const bId = searchParams.get('baseId');
@@ -593,7 +608,7 @@ function LoginContent() {
                                                         className="w-full bg-surface border border-gray-100 rounded-xl py-2.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm font-medium appearance-none"
                                                     >
                                                         <option value="">Selecione...</option>
-                                                        {unions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                                        {sortedUnions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                                     </select>
                                                 )}
                                             </div>
