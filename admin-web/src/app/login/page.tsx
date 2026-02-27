@@ -58,6 +58,7 @@ function LoginContent() {
     const [regionId, setRegionId] = useState("");
     const [districtId, setDistrictId] = useState("");
     const [baseId, setBaseId] = useState("");
+    const [targetRole, setTargetRole] = useState("membro");
 
     // Custom names for new entities
     const [customUnion, setCustomUnion] = useState("");
@@ -120,6 +121,12 @@ function LoginContent() {
             if (dId) setDistrictId(dId);
             if (prog === 'GA' || prog === 'SOUL+') setProgramType(prog as "GA" | "SOUL+");
         }
+
+        const roleParam = searchParams.get('role');
+        if (roleParam === 'coord_regiao' || roleParam === 'coord_distrital') {
+            setTargetRole(roleParam);
+            setIsLogin(false); // Force register for these links
+        }
     }, [searchParams]);
 
     const handleAuth = async (e: React.FormEvent) => {
@@ -149,18 +156,31 @@ function LoginContent() {
         }
 
         if (!isLogin && step === 2) {
-            const hasLocation = (unionId || customUnion) &&
-                (associationId || customAssociation) &&
-                (regionId || customRegion) &&
-                (districtId || customDistrict) &&
-                (baseId || customBase);
+            let hasLocation = false;
 
-            if (!hasLocation) {
-                return setError("Por favor, selecione ou cadastre sua localização completa.");
+            if (targetRole === 'coord_regiao') {
+                // Regional only needs Region
+                hasLocation = !!(regionId || customRegion);
+                if (!hasLocation) return setError("Por favor, selecione ou cadastre sua Região.");
+            } else if (targetRole === 'coord_distrital') {
+                // Distrital needs Region and District
+                hasLocation = !!(regionId || customRegion) && !!(districtId || customDistrict);
+                if (!hasLocation) return setError("Por favor, selecione ou cadastre sua Região e Distrito.");
+            } else {
+                // Default (Membro/Coord Base)
+                hasLocation = (unionId || customUnion) &&
+                    (associationId || customAssociation) &&
+                    (regionId || customRegion) &&
+                    (districtId || customDistrict) &&
+                    (baseId || customBase);
+
+                if (!hasLocation) {
+                    return setError("Por favor, selecione ou cadastre sua localização completa.");
+                }
             }
 
             // Check member limit if joining an existing base
-            if (!isManualBase && baseId) {
+            if (!isManualBase && baseId && targetRole === 'membro') {
                 setLoading(true);
                 const limitCheck = await canAddMember(baseId);
                 setLoading(false);
@@ -185,14 +205,16 @@ function LoginContent() {
                 await updateProfile(user, { displayName });
 
                 // Create user document with pending status
+                const isGuaranteedAccess = targetRole === 'coord_regiao' || targetRole === 'coord_distrital';
+
                 await setDoc(doc(db, "users", user.uid), {
                     uid: user.uid,
                     email,
                     displayName,
                     whatsapp,
                     cpf,
-                    role: "membro",
-                    status: isInvited ? "approved" : "pending",
+                    role: targetRole,
+                    status: (isInvited || isGuaranteedAccess) ? "approved" : "pending",
                     unionId,
                     associationId,
                     regionId,
@@ -440,7 +462,7 @@ function LoginContent() {
                                         <ChevronLeft size={20} className="text-gray-400" />
                                     </button>
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                                        {isInvited ? "Confirmar Localização" : "Vínculo Institucional"}
+                                        {isInvited ? "Confirmar Localização" : targetRole !== 'membro' ? `Cadastro de ${targetRole === 'coord_regiao' ? 'Regional' : 'Distrital'}` : "Vínculo Institucional"}
                                     </p>
                                 </div>
 
@@ -636,7 +658,7 @@ function LoginContent() {
                                         )}
 
                                         {/* 4. DISTRITO */}
-                                        {(regionId || isManualRegion) && (
+                                        {((regionId || isManualRegion) && targetRole !== 'coord_regiao') && (
                                             <div className="space-y-1 animate-fade-in">
                                                 <div className="flex justify-between items-center px-1">
                                                     <label className="text-xs font-medium text-text-secondary italic">4. Selecione seu Distrito</label>
@@ -682,7 +704,7 @@ function LoginContent() {
                                         )}
 
                                         {/* 5. BASE */}
-                                        {(districtId || isManualDistrict) && (
+                                        {((districtId || isManualDistrict) && targetRole === 'membro') && (
                                             <div className="space-y-1 animate-fade-in">
                                                 <div className="flex justify-between items-center px-1">
                                                     <label className="text-xs font-medium text-text-secondary italic font-bold text-primary">5. Sua Localidade (Base)</label>

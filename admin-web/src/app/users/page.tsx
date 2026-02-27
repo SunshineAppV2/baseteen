@@ -172,29 +172,41 @@ export default function UsersPage() {
     const [editQuarterClassification, setEditQuarterClassification] = useState("");
     const [editParticipatesInRanking, setEditParticipatesInRanking] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [copiedInvite, setCopiedInvite] = useState(false);
 
-    const handleCopyInvite = () => {
+    const [copiedInviteRole, setCopiedInviteRole] = useState<string | null>(null);
+    const [inviteAssociationId, setInviteAssociationId] = useState("");
+
+    const handleCopyInvite = (role?: string) => {
         if (!currentUser) return;
 
         const baseUrl = window.location.origin + "/login";
         const params = new URLSearchParams({
             unionId: currentUser.unionId || "",
-            associationId: currentUser.associationId || "",
+            associationId: inviteAssociationId || currentUser.associationId || "",
             regionId: currentUser.regionId || "",
             districtId: currentUser.districtId || "",
             baseId: currentUser.baseId || ""
         });
 
+        if (role) {
+            params.set('role', role);
+            if (role === 'coord_regiao') {
+                params.delete('districtId');
+                params.delete('baseId');
+            } else if (role === 'coord_distrital') {
+                params.delete('baseId');
+            }
+        }
+
         const currentBase = bases.find(b => b.id === currentUser.baseId);
-        if (currentBase && (currentBase as any).program) {
+        if (!role && currentBase && (currentBase as any).program) {
             params.append('program', (currentBase as any).program);
         }
 
         const link = `${baseUrl}?${params.toString()}`;
         navigator.clipboard.writeText(link);
-        setCopiedInvite(true);
-        setTimeout(() => setCopiedInvite(false), 2000);
+        setCopiedInviteRole(role || "membro");
+        setTimeout(() => setCopiedInviteRole(null), 2000);
     };
 
     // New User State
@@ -564,23 +576,77 @@ export default function UsersPage() {
                             </Button>
                         </>
                     )}
-                    {((currentUser?.role === 'coord_base' && currentUser.baseId) || currentUser?.role === 'master') && (
-                        <Button
-                            onClick={handleCopyInvite}
-                            variant="outline"
-                            className={clsx(
-                                "flex items-center gap-2 border-primary transition-all",
-                                copiedInvite ? "bg-green-50 text-green-600 border-green-600" : "text-primary hover:bg-primary/5"
+                    {/* Invite Links */}
+                    <div className="flex flex-col md:flex-row items-center gap-3 bg-gray-50/50 p-2 rounded-xl border border-gray-100">
+                        {/* Association Selector for Links */}
+                        {['master', 'coord_geral', 'coord_uniao'].includes(currentUser?.role || '') && (
+                            <div className="flex items-center gap-2">
+                                <Shield size={16} className="text-gray-400" />
+                                <select
+                                    className="text-xs border-none bg-transparent font-bold text-gray-600 focus:ring-0 cursor-pointer"
+                                    value={inviteAssociationId}
+                                    onChange={(e) => setInviteAssociationId(e.target.value)}
+                                >
+                                    <option value="">Assoc. Automática</option>
+                                    {associations.map(a => (
+                                        <option key={a.id} value={a.id}>{a.name}</option>
+                                    ))}
+                                </select>
+                                <div className="h-4 w-px bg-gray-200 mx-1" />
+                            </div>
+                        )}
+
+                        <div className="flex gap-2">
+                            {/* Member/Base Invite */}
+                            {((currentUser?.role === 'coord_base' && currentUser.baseId) || currentUser?.role === 'master' || currentUser?.role === 'coord_distrital') && (
+                                <Button
+                                    onClick={() => handleCopyInvite()}
+                                    variant="outline"
+                                    className={clsx(
+                                        "flex items-center gap-2 border-primary transition-all",
+                                        copiedInviteRole === "membro" ? "bg-green-50 text-green-600 border-green-600" : "text-primary hover:bg-primary/5"
+                                    )}
+                                >
+                                    {copiedInviteRole === "membro" ? <CheckCircle size={20} /> : <Share2 size={20} />}
+                                    {copiedInviteRole === "membro" ? "Copiado!" : "Convidar Membro"}
+                                </Button>
                             )}
-                        >
-                            {copiedInvite ? <CheckCircle size={20} /> : <Share2 size={20} />}
-                            {copiedInvite ? "Copiado!" : "Convidar p/ Link"}
+
+                            {/* Regional/Distrital Invite (Master, Geral, União, Assoc, Região) */}
+                            {['master', 'coord_geral', 'coord_uniao', 'coord_associacao', 'coord_regiao'].includes(currentUser?.role || '') && (
+                                <>
+                                    <Button
+                                        onClick={() => handleCopyInvite('coord_distrital')}
+                                        variant="outline"
+                                        className={clsx(
+                                            "flex items-center gap-2 border-orange-500 transition-all",
+                                            copiedInviteRole === "coord_distrital" ? "bg-green-50 text-green-600 border-green-600" : "text-orange-600 hover:bg-orange-50"
+                                        )}
+                                    >
+                                        {copiedInviteRole === "coord_distrital" ? <CheckCircle size={20} /> : <Share2 size={20} />}
+                                        {copiedInviteRole === "coord_distrital" ? "Copiado!" : "Link Distrital"}
+                                    </Button>
+                                    {['master', 'coord_geral', 'coord_uniao', 'coord_associacao'].includes(currentUser?.role || '') && (
+                                        <Button
+                                            onClick={() => handleCopyInvite('coord_regiao')}
+                                            variant="outline"
+                                            className={clsx(
+                                                "flex items-center gap-2 border-teal-500 transition-all",
+                                                copiedInviteRole === "coord_regiao" ? "bg-teal-50 text-teal-600 border-teal-600" : "text-teal-600 hover:bg-teal-50"
+                                            )}
+                                        >
+                                            {copiedInviteRole === "coord_regiao" ? <CheckCircle size={20} /> : <Share2 size={20} />}
+                                            {copiedInviteRole === "coord_regiao" ? "Copiado!" : "Link Regional"}
+                                        </Button>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                        <Button onClick={() => setIsCreateModalOpen(true)} className="flex items-center gap-2">
+                            <UserPlus size={20} />
+                            Novo Usuário
                         </Button>
-                    )}
-                    <Button onClick={() => setIsCreateModalOpen(true)} className="flex items-center gap-2">
-                        <UserPlus size={20} />
-                        Novo Usuário
-                    </Button>
+                    </div>
                 </div>
             </div>
 

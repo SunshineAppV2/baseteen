@@ -47,6 +47,25 @@ interface Region {
     name: string;
 }
 
+interface Association {
+    id: string;
+    name: string;
+}
+
+interface User {
+    id: string;
+    displayName: string;
+    email: string;
+    role: string;
+    status: string;
+    unionId?: string;
+    associationId?: string;
+    regionId?: string;
+    districtId?: string;
+    baseId?: string;
+    createdAt: any;
+}
+
 export default function ReportsPage() {
     const { user: currentUser } = useAuth();
 
@@ -56,6 +75,8 @@ export default function ReportsPage() {
     const { data: basesRaw } = useCollection<Base>("bases");
     const { data: districtsRaw } = useCollection<District>("districts");
     const { data: regionsRaw } = useCollection<Region>("regions");
+    const { data: associationsRaw } = useCollection<Association>("associations");
+    const { data: allUsers } = useCollection<User>("users");
 
     // Sort alphabetically
     const bases = useMemo(() => [...basesRaw].sort((a, b) => a.name.localeCompare(b.name)), [basesRaw]);
@@ -63,7 +84,7 @@ export default function ReportsPage() {
     const regions = useMemo(() => [...regionsRaw].sort((a, b) => a.name.localeCompare(b.name)), [regionsRaw]);
 
     // 2. Filters State
-    const [viewMode, setViewMode] = useState<'base' | 'requirement'>('base');
+    const [viewMode, setViewMode] = useState<'base' | 'requirement' | 'coordinators'>('base');
     const [startDate, setStartDate] = useState<string>("");
     const [endDate, setEndDate] = useState<string>("");
     const [selectedDistrict, setSelectedDistrict] = useState<string>("all");
@@ -155,7 +176,7 @@ export default function ReportsPage() {
                 head: [['Base', 'Aprovados', 'Pendentes', 'Pontos']],
                 body: tableData,
             });
-        } else {
+        } else if (viewMode === 'requirement') {
             // Requirement View PDF
             const tableData = tasks.filter(t => t.isBaseCollective).map(task => {
                 const taskSubs = filteredSubmissions.filter(s => s.taskId === task.id);
@@ -167,6 +188,23 @@ export default function ReportsPage() {
             autoTable(doc, {
                 startY: 50,
                 head: [['Requisito', 'Respostas', '% Conclusão']],
+                body: tableData,
+            });
+        } else {
+            const tableData = allUsers
+                .filter(u => ['coord_regiao', 'coord_distrital'].includes(u.role))
+                .map(u => [
+                    u.displayName,
+                    u.email,
+                    u.role === 'coord_regiao' ? 'Regional' : 'Distrital',
+                    regionsRaw.find(r => r.id === u.regionId)?.name || '-',
+                    districtsRaw.find(d => d.id === u.districtId)?.name || '-',
+                    u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString('pt-BR') : '-'
+                ]);
+
+            autoTable(doc, {
+                startY: 50,
+                head: [['Nome', 'Email', 'Nível', 'Região', 'Distrito', 'Cadastro']],
                 body: tableData,
             });
         }
@@ -254,6 +292,12 @@ export default function ReportsPage() {
                     >
                         Por Requisito
                     </button>
+                    <button
+                        onClick={() => setViewMode('coordinators')}
+                        className={`px-4 py-2 text-sm font-medium transition-colors ${viewMode === 'coordinators' ? 'bg-primary text-white' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                    >
+                        Coordenadores
+                    </button>
                 </div>
             </div>
 
@@ -311,7 +355,7 @@ export default function ReportsPage() {
                             </tbody>
                         </table>
                     </div>
-                ) : (
+                ) : viewMode === 'requirement' ? (
                     <div className="divide-y divide-gray-100">
                         {tasks.filter(t => t.isBaseCollective).map(task => {
                             const taskSubs = filteredSubmissions.filter(s => s.taskId === task.id);
@@ -390,6 +434,54 @@ export default function ReportsPage() {
                                 </details>
                             );
                         })}
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50 border-b border-gray-100">
+                                <tr>
+                                    <th className="text-left py-4 px-6 text-xs font-bold text-text-secondary uppercase">Nome</th>
+                                    <th className="text-left py-4 px-6 text-xs font-bold text-text-secondary uppercase">Email</th>
+                                    <th className="text-center py-4 px-6 text-xs font-bold text-text-secondary uppercase">Nível</th>
+                                    <th className="text-left py-4 px-6 text-xs font-bold text-text-secondary uppercase">Associação</th>
+                                    <th className="text-left py-4 px-6 text-xs font-bold text-text-secondary uppercase">Região/Distrito</th>
+                                    <th className="text-center py-4 px-6 text-xs font-bold text-text-secondary uppercase">Data Cadastro</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {allUsers
+                                    .filter(u => ['coord_regiao', 'coord_distrital'].includes(u.role))
+                                    .sort((a, b) => {
+                                        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+                                        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+                                        return dateB.getTime() - dateA.getTime();
+                                    })
+                                    .map(user => {
+                                        const assoc = associationsRaw.find(a => a.id === user.associationId)?.name || "-";
+                                        const region = regionsRaw.find(r => r.id === user.regionId)?.name || "-";
+                                        const district = districtsRaw.find(d => d.id === user.districtId)?.name || "-";
+
+                                        return (
+                                            <tr key={user.id} className="hover:bg-gray-50/50">
+                                                <td className="py-4 px-6 font-medium text-text-primary">{user.displayName}</td>
+                                                <td className="py-4 px-6 text-sm text-text-secondary">{user.email}</td>
+                                                <td className="py-4 px-6 text-center">
+                                                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${user.role === 'coord_regiao' ? 'bg-teal-100 text-teal-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                        {user.role === 'coord_regiao' ? 'Regional' : 'Distrital'}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 px-6 text-sm text-text-secondary">{assoc}</td>
+                                                <td className="py-4 px-6 text-sm text-text-secondary">
+                                                    {region} {user.role === 'coord_distrital' && `/ ${district}`}
+                                                </td>
+                                                <td className="py-4 px-6 text-center text-xs text-text-secondary">
+                                                    {user.createdAt?.toDate ? user.createdAt.toDate().toLocaleDateString('pt-BR') : "-"}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>

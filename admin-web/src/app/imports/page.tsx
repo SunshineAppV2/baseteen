@@ -69,6 +69,52 @@ export default function ImportsPage() {
         }
     };
 
+    const handleUndoRecent = async () => {
+        const threshold = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+        if (!confirm(`Isso excluirá TODOS os registros (Uniões, Associações, Regiões, Distritos e Bases) criados nos últimos 60 minutos (${threshold.toLocaleTimeString()}). Deseja continuar?`)) return;
+
+        setIsProcessing(true);
+        setResults(null);
+        const deleted: string[] = [];
+        const errors: string[] = [];
+
+        const collections = ["unions", "associations", "regions", "districts", "bases"];
+
+        try {
+            for (const col of collections) {
+                // We use the raw data from useCollection which is real-time
+                let rawData: any[] = [];
+                switch (col) {
+                    case "unions": rawData = unionsRaw; break;
+                    case "associations": rawData = associationsRaw; break;
+                    case "regions": rawData = regionsRaw; break;
+                    case "districts": rawData = districtsRaw; break;
+                    case "bases": rawData = basesRaw; break;
+                }
+
+                const toDelete = rawData.filter(item => {
+                    if (!item.createdAt) return false;
+                    const created = item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt);
+                    return created > threshold;
+                });
+
+                for (const item of toDelete) {
+                    try {
+                        await firestoreService.delete(col, item.id);
+                        deleted.push(`${col}: ${item.name}`);
+                    } catch (err: any) {
+                        errors.push(`${col}: ${item.name} (${err.message})`);
+                    }
+                }
+            }
+            alert(`Limpeza concluída! ${deleted.length} registros removidos.`);
+        } catch (err: any) {
+            alert(`Erro na limpeza: ${err.message}`);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleHierarchyImport = async () => {
         if (!importText.trim()) return alert("Cole os dados da planilha!");
 
@@ -261,11 +307,23 @@ export default function ImportsPage() {
 
     return (
         <div className="p-8 max-w-6xl mx-auto space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-                    Importações em Lote
-                </h1>
-                <p className="text-text-secondary mt-1">Importe múltiplas entidades de uma vez</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                        Importações em Lote
+                    </h1>
+                    <p className="text-text-secondary mt-1">Importe múltiplas entidades de uma vez</p>
+                </div>
+
+                <Button
+                    variant="outline"
+                    className="border-red-200 text-red-600 hover:bg-red-50 gap-2"
+                    onClick={handleUndoRecent}
+                    disabled={isProcessing}
+                >
+                    <AlertCircle size={18} />
+                    Desfazer Importações Recentes
+                </Button>
             </div>
 
             {/* Tabs */}
