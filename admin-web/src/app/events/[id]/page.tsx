@@ -1029,7 +1029,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {[...eventTasks].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR', { numeric: true })).map(task => {
+                                {[...eventTasks].sort((a, b) => (parseInt(a.title.match(/^\d+/)?.[0] ?? '0') - parseInt(b.title.match(/^\d+/)?.[0] ?? '0'))).map(task => {
                                     const submission = mySubmissions.find(s => s.taskId === task.id);
                                     const status = submission?.status;
 
@@ -1175,7 +1175,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                         <div className="p-6">
                             {eventTasks.length > 0 ? (
                                 <div className="space-y-3">
-                                    {[...eventTasks].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR', { numeric: true })).map(task => (
+                                    {[...eventTasks].sort((a, b) => (parseInt(a.title.match(/^\d+/)?.[0] ?? '0') - parseInt(b.title.match(/^\d+/)?.[0] ?? '0'))).map(task => (
                                         <div key={task.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-3 mb-1">
