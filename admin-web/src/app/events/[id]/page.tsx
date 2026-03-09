@@ -103,6 +103,7 @@ interface EventTask {
     deadline?: string;
     releaseDate?: string;
     registrationType?: 'individual' | 'base';
+    maxSubmissions?: number; // PLUS+: quantas vezes pode ser realizado (default 1)
 }
 
 interface BaseSubmission {
@@ -482,32 +483,60 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         setIsSaving(true);
         try {
             let count = 0;
+            const eventStart = event.startDate?.toDate().toISOString().split('T')[0] ?? '';
+            const eventEnd = event.endDate?.toDate().toISOString().split('T')[0] ?? '';
+
             for (const line of lines) {
                 if (line.trim().length < 3) continue;
-                // Suporta vírgula ou ponto e vírgula
                 const delimiter = line.includes(';') ? ';' : ',';
                 const parts = line.split(delimiter).map(p => p.trim());
 
-                let title = parts[0];
-                let description = parts[1] || "";
-                let points = Number(parts[2]) || 10;
-                let type: any = parts[3] || "check";
+                // Campos: Título, Descrição, Pontos, Tipo, DataInício, DataFim, TipoInscrição
+                const title = parts[0] || '';
+                const description = parts[1] || '';
+                const points = Number(parts[2]) || 10;
+                let type: string = parts[3]?.toLowerCase() || 'check';
+                const releaseDateRaw = parts[4] || '';
+                const deadlineRaw = parts[5] || '';
+                const registrationRaw = parts[6]?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') || 'individual';
 
-                // Mapeamento simples de tipos comuns em português
-                const typeMap: any = {
+                if (!title) continue;
+
+                // Mapeamento de tipos de entrega
+                const typeMap: Record<string, string> = {
                     "texto": "text",
+                    "text": "text",
+                    "texto+upload": "text_upload",
+                    "texto+link": "text_link",
+                    "textoupload": "text_upload",
+                    "textolink": "text_link",
                     "upload": "upload",
                     "anexo": "upload",
                     "foto": "upload",
                     "link": "link",
                     "check": "check",
-                    "marcar": "check"
+                    "marcar": "check",
                 };
+                const normalizedType = type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
+                type = typeMap[normalizedType] ?? typeMap[type] ?? 'check';
 
-                const normalizedType = type.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                if (typeMap[normalizedType]) {
-                    type = typeMap[normalizedType];
-                }
+                // Mapeamento de tipo de inscrição
+                const regMap: Record<string, string> = {
+                    'individual': 'individual',
+                    'base': 'base',
+                    'grupo': 'base',
+                    'equipe': 'base',
+                };
+                const registrationType = regMap[registrationRaw] ?? 'individual';
+
+                // Parsing de datas (aceita dd/mm/aaaa ou aaaa-mm-dd)
+                const parseDate = (raw: string, fallback: string) => {
+                    if (!raw) return fallback;
+                    if (/\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
+                    const [d, m, y] = raw.split('/');
+                    if (d && m && y) return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    return fallback;
+                };
 
                 const payload = {
                     title,
@@ -517,9 +546,9 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                     eventId: eventId,
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
-                    releaseDate: taskFormData.releaseDate || event.startDate?.toDate().toISOString().split('T')[0],
-                    deadline: taskFormData.deadline || event.endDate?.toDate().toISOString().split('T')[0],
-                    registrationType: "individual"
+                    releaseDate: parseDate(releaseDateRaw, eventStart),
+                    deadline: parseDate(deadlineRaw, eventEnd),
+                    registrationType,
                 };
 
                 await firestoreService.add("tasks", payload);
@@ -527,7 +556,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
             }
             alert(`${count} desafios importados com sucesso!`);
             setIsImportModalOpen(false);
-            setImportText("");
+            setImportText('');
         } catch (error) {
             console.error(error);
             alert("Erro ao importar desafios.");
@@ -1030,15 +1059,29 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {[...eventTasks].sort((a, b) => (parseInt(a.title.match(/^\d+/)?.[0] ?? '0') - parseInt(b.title.match(/^\d+/)?.[0] ?? '0'))).map(task => {
-                                    const submission = mySubmissions.find(s => s.taskId === task.id);
-                                    const status = submission?.status;
+                                    const taskSubmissions = mySubmissions.filter(s => s.taskId === task.id);
+                                    const approvedCount = taskSubmissions.filter(s => s.status === 'approved').length;
+                                    const pendingSubmission = taskSubmissions.find(s => s.status === 'pending');
+                                    const lastRejected = taskSubmissions.find(s => s.status === 'rejected');
+                                    const maxSubs = task.maxSubmissions ?? 1;
+                                    const isPlus = maxSubs > 1;
+
+                                    // Status para exibição: prioriza pending, depois o estado geral
+                                    const displayStatus = pendingSubmission ? 'pending'
+                                        : approvedCount >= maxSubs ? 'approved'
+                                            : approvedCount > 0 ? 'partial'
+                                                : lastRejected ? 'rejected'
+                                                    : undefined;
+
+                                    // Pode reenviar se: não tem pending E não completou todas as tentativas
+                                    const canResubmit = !pendingSubmission && approvedCount < maxSubs;
 
                                     // Date Logic
                                     const now = new Date();
                                     const releaseDate = task.releaseDate ? new Date(task.releaseDate + 'T00:00:00') : null;
                                     const deadline = task.deadline ? new Date(task.deadline + 'T23:59:59') : null;
 
-                                    // Visibility Check (Release Date)
+                                    // Visibility Check
                                     if (releaseDate && now < releaseDate) {
                                         return (
                                             <div key={task.id} className="bg-gray-50 p-6 rounded-2xl border-2 border-dashed border-gray-200 opacity-60 flex flex-col items-center justify-center text-center gap-2">
@@ -1054,13 +1097,20 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     return (
                                         <div key={task.id} className={clsx(
                                             "bg-white p-6 rounded-2xl border-2 transition-all relative overflow-hidden",
-                                            status === 'approved' ? "border-green-500 bg-green-50" :
-                                                status === 'rejected' ? "border-red-500 bg-red-50" :
-                                                    status === 'pending' ? "border-yellow-500 bg-yellow-50" :
-                                                        "border-gray-100 hover:border-primary/50"
+                                            displayStatus === 'approved' ? "border-green-500 bg-green-50" :
+                                                displayStatus === 'partial' ? "border-blue-400 bg-blue-50" :
+                                                    displayStatus === 'rejected' ? "border-red-500 bg-red-50" :
+                                                        displayStatus === 'pending' ? "border-yellow-500 bg-yellow-50" :
+                                                            "border-gray-100 hover:border-primary/50"
                                         )}>
+                                            {/* PLUS+ badge */}
+                                            {isPlus && (
+                                                <div className="absolute top-3 right-3 bg-gradient-to-r from-violet-500 to-purple-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full tracking-wider shadow">
+                                                    PLUS+ {approvedCount}/{maxSubs}
+                                                </div>
+                                            )}
                                             <div className="flex justify-between items-start mb-4">
-                                                <div>
+                                                <div className="pr-12">
                                                     <h3 className="font-bold text-lg">{task.title}</h3>
                                                     <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 capitalize">{task.type}</span>
                                                 </div>
@@ -1068,25 +1118,51 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                             </div>
                                             <p className="text-sm text-gray-500 mb-6">{task.description}</p>
 
+                                            {/* PLUS+ Progress Bar */}
+                                            {isPlus && (
+                                                <div className="mb-4">
+                                                    <div className="flex gap-1">
+                                                        {Array.from({ length: maxSubs }).map((_, i) => (
+                                                            <div key={i} className={clsx(
+                                                                "flex-1 h-2 rounded-full transition-all",
+                                                                i < approvedCount ? "bg-green-400" :
+                                                                    (pendingSubmission && i === approvedCount) ? "bg-yellow-400 animate-pulse" :
+                                                                        "bg-gray-200"
+                                                            )} />
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-[10px] text-gray-400 mt-1">{approvedCount} de {maxSubs} realizações aprovadas</p>
+                                                </div>
+                                            )}
+
                                             <div className="flex justify-between items-center">
-                                                {status ? (
-                                                    <span className={clsx(
-                                                        "px-3 py-1 rounded-full text-xs font-bold uppercase",
-                                                        status === 'approved' ? "bg-green-200 text-green-800" :
-                                                            status === 'rejected' ? "bg-red-200 text-red-800" :
-                                                                "bg-yellow-200 text-yellow-800"
-                                                    )}>
-                                                        {status === 'approved' ? "Aprovado" : status === 'rejected' ? "Reprovado" : "Pendente"}
-                                                    </span>
+                                                {!isPlus ? (
+                                                    displayStatus ? (
+                                                        <span className={clsx(
+                                                            "px-3 py-1 rounded-full text-xs font-bold uppercase",
+                                                            displayStatus === 'approved' ? "bg-green-200 text-green-800" :
+                                                                displayStatus === 'rejected' ? "bg-red-200 text-red-800" :
+                                                                    "bg-yellow-200 text-yellow-800"
+                                                        )}>
+                                                            {displayStatus === 'approved' ? "Aprovado" : displayStatus === 'rejected' ? "Reprovado" : "Pendente"}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400">Não enviado</span>
+                                                    )
                                                 ) : (
-                                                    <span className="text-xs text-gray-400">Não enviado</span>
+                                                    <span className="text-xs text-gray-500">
+                                                        {pendingSubmission ? "⏳ Aguardando aprovação" : canResubmit ? "✅ Pode enviar nova realização" : "🏆 Concluído!"}
+                                                    </span>
                                                 )}
 
-                                                {!status || status === 'rejected' ? (
-                                                    <Button size="sm" onClick={() => setSelectedTaskForSubmission(task)} disabled={isExpired && !status}>
-                                                        {isExpired ? "Encerrado" : status === 'rejected' ? "Tentar Novamente" : "Enviar Resposta"}
+                                                {canResubmit && (
+                                                    <Button size="sm" onClick={() => { setSelectedTaskForSubmission(task); setSubmissionData({ text: "", link: "", completed: false }); }} disabled={isExpired}>
+                                                        {isExpired ? "Encerrado" : (approvedCount > 0 || lastRejected) ? "Enviar Novamente" : "Enviar Resposta"}
                                                     </Button>
-                                                ) : <div />}
+                                                )}
+                                                {!canResubmit && displayStatus !== 'approved' && displayStatus && (
+                                                    <div />
+                                                )}
                                             </div>
                                         </div>
                                     );
@@ -1182,6 +1258,11 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                                     <span className="font-bold text-gray-800">{task.title}</span>
                                                     <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold">{task.points} PTS</span>
                                                     <span className="text-xs text-gray-400 capitalize bg-gray-100 px-2 py-0.5 rounded">{task.type}</span>
+                                                    {(task.maxSubmissions ?? 1) > 1 && (
+                                                        <span className="text-[10px] font-black bg-gradient-to-r from-violet-500 to-purple-600 text-white px-2 py-0.5 rounded-full">
+                                                            PLUS+ {task.maxSubmissions}×
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <p className="text-sm text-gray-500 line-clamp-1">{task.description}</p>
                                             </div>
@@ -1625,6 +1706,35 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                 </div>
                             </div>
 
+                            {/* PLUS+ Field */}
+                            <div className="mt-4">
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 opacity-70">Realizações Máximas (PLUS+)</label>
+                                <div className="flex gap-2">
+                                    {[1, 2, 3, 4].map(n => (
+                                        <button
+                                            key={n}
+                                            type="button"
+                                            onClick={() => setTaskFormData({ ...taskFormData, maxSubmissions: n })}
+                                            className={clsx(
+                                                "flex-1 py-2.5 rounded-xl font-black text-sm border-2 transition-all",
+                                                (taskFormData.maxSubmissions ?? 1) === n
+                                                    ? n === 1
+                                                        ? "border-gray-400 bg-gray-100 text-gray-700"
+                                                        : "border-purple-500 bg-gradient-to-b from-violet-500 to-purple-600 text-white shadow-lg shadow-purple-500/30"
+                                                    : "border-gray-100 bg-white text-gray-400 hover:border-gray-300"
+                                            )}
+                                        >
+                                            {n === 1 ? '1× Normal' : `${n}× PLUS+`}
+                                        </button>
+                                    ))}
+                                </div>
+                                {(taskFormData.maxSubmissions ?? 1) > 1 && (
+                                    <p className="text-[10px] text-purple-600 mt-1.5 font-medium">
+                                        ✨ Este desafio poderá ser realizado até {taskFormData.maxSubmissions}x, com XP creditado a cada aprovação.
+                                    </p>
+                                )}
+                            </div>
+
                             <Button onClick={handleSaveTask} className="w-full py-4 text-lg font-bold rounded-xl shadow-lg mt-4" disabled={isSaving}>
                                 {isSaving ? "Salvando..." : "Salvar Desafio"}
                             </Button>
@@ -1887,19 +1997,36 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     </button>
                                     <div>
                                         <p className="text-sm font-bold text-gray-600 mb-1">Cole os desafios abaixo:</p>
-                                        <p className="text-[10px] text-gray-400 mb-3 uppercase tracking-wider">Formato: Título, Descrição, Pontos, Tipo</p>
+                                        <p className="text-[10px] text-gray-400 mb-3 uppercase tracking-wider">Formato: Título, Descrição, Pontos, Tipo, DataInício, DataFim, Inscrição</p>
                                         <textarea
-                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 text-sm font-medium h-48 outline-none focus:border-primary/50 resize-none"
-                                            placeholder="Ex: Doação de Sangue, Tire uma foto doando, 200, upload"
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 text-sm font-medium h-48 outline-none focus:border-primary/50 resize-none font-mono"
+                                            placeholder={`01. Inscrição da Base, Inscrever a base no Campo, 300, texto+upload, 01/02/2026, 11/04/2026, base
+02. Perfil no Instagram, Criar um perfil e postar fotos, 200, link, 01/02/2026, 11/04/2026, base
+03. Culto de Qua-Feira, Realizar o culto com participantes, 150, upload, 01/02/2026, 11/04/2026, individual`}
                                             value={importText}
                                             onChange={e => setImportText(e.target.value)}
                                         />
                                     </div>
-                                    <div className="bg-blue-50 p-3 rounded-xl flex items-start gap-2">
-                                        <AlertCircle size={16} className="text-blue-600 mt-0.5" />
-                                        <p className="text-[10px] text-blue-700 leading-relaxed font-medium">
-                                            Cada linha representa um desafio. Os campos devem ser separados por vírgula. Tipos válidos: check, texto, upload, link.
-                                        </p>
+                                    <div className="bg-blue-50 p-3 rounded-xl space-y-1.5">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                            <AlertCircle size={14} className="text-blue-600" />
+                                            <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Legenda dos Campos</p>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                            <p className="text-[10px] text-blue-700"><span className="font-bold">Tipo de Entrega:</span></p>
+                                            <p className="text-[10px] text-blue-700"><span className="font-bold">Inscrição:</span></p>
+                                            <div className="text-[10px] text-blue-600 space-y-0.5">
+                                                <p>• <code>texto</code> &nbsp;&nbsp;&nbsp;• <code>upload</code></p>
+                                                <p>• <code>link</code> &nbsp;&nbsp;&nbsp;&nbsp;• <code>check</code></p>
+                                                <p>• <code>texto+upload</code></p>
+                                                <p>• <code>texto+link</code></p>
+                                            </div>
+                                            <div className="text-[10px] text-blue-600 space-y-0.5">
+                                                <p>• <code>individual</code></p>
+                                                <p>• <code>base</code></p>
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-blue-500 pt-1 border-t border-blue-100 mt-1">Data no formato <code>dd/mm/aaaa</code>. Se omitida, usa as datas do evento.</p>
                                     </div>
                                     <Button onClick={handleImportFromText} disabled={!importText.trim() || isSaving} className="w-full h-12 rounded-xl font-bold">
                                         {isSaving ? <Loader2 className="animate-spin" /> : "Processar e Importar"}
