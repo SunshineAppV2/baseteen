@@ -27,7 +27,11 @@ import {
     Target, // Added
     Loader2, // Added
     Heart,
-    Clock // Added
+    Clock, // Added
+    FileDown,
+    Copy,
+    ChevronRight,
+    SearchX
 } from "lucide-react";
 import {
     collection,
@@ -211,6 +215,12 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     const [registrationsByBase, setRegistrationsByBase] = useState<Record<string, Registration[]>>({});
     const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [importStep, setImportStep] = useState<'type' | 'event' | 'global' | 'text'>('type');
+    const [importText, setImportText] = useState("");
+    const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(new Set());
+    const { data: allEventsTemplates } = useCollection<Event>("events", [where("status", "==", "finished")]);
+    const { data: globalTasks } = useCollection<EventTask>("tasks", [where("eventId", "==", null)]);
 
     // Initial Load
     useEffect(() => {
@@ -460,6 +470,131 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         } catch (error) {
             console.error(error);
             alert("Erro ao salvar desafio.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // Import Logic
+    const handleImportFromText = async () => {
+        if (!importText.trim()) return;
+        const lines = importText.split("\n").filter(l => l.trim());
+        setIsSaving(true);
+        try {
+            let count = 0;
+            for (const line of lines) {
+                if (line.trim().length < 3) continue;
+                // Suporta vírgula ou ponto e vírgula
+                const delimiter = line.includes(';') ? ';' : ',';
+                const parts = line.split(delimiter).map(p => p.trim());
+
+                let title = parts[0];
+                let description = parts[1] || "";
+                let points = Number(parts[2]) || 10;
+                let type: any = parts[3] || "check";
+
+                // Mapeamento simples de tipos comuns em português
+                const typeMap: any = {
+                    "texto": "text",
+                    "upload": "upload",
+                    "anexo": "upload",
+                    "foto": "upload",
+                    "link": "link",
+                    "check": "check",
+                    "marcar": "check"
+                };
+
+                const normalizedType = type.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (typeMap[normalizedType]) {
+                    type = typeMap[normalizedType];
+                }
+
+                const payload = {
+                    title,
+                    description,
+                    points,
+                    type,
+                    eventId: eventId,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    releaseDate: taskFormData.releaseDate || event.startDate?.toDate().toISOString().split('T')[0],
+                    deadline: taskFormData.deadline || event.endDate?.toDate().toISOString().split('T')[0],
+                    registrationType: "individual"
+                };
+
+                await firestoreService.add("tasks", payload);
+                count++;
+            }
+            alert(`${count} desafios importados com sucesso!`);
+            setIsImportModalOpen(false);
+            setImportText("");
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao importar desafios.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleImportFromEvent = async (sourceEventId: string) => {
+        if (!confirm("Isso copiará todos os desafios deste evento para o atual. Continuar?")) return;
+        setIsSaving(true);
+        try {
+            const tasksRef = collection(db, "tasks");
+            const q = query(tasksRef, where("eventId", "==", sourceEventId));
+            const snap = await getDocs(q);
+
+            const batch = writeBatch(db);
+            snap.docs.forEach(d => {
+                const newTaskRef = doc(collection(db, "tasks"));
+                const data = d.data();
+                delete (data as any).id;
+                batch.set(newTaskRef, {
+                    ...data,
+                    eventId: eventId,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+            });
+
+            await batch.commit();
+            alert(`${snap.size} desafios clonados com sucesso!`);
+            setIsImportModalOpen(false);
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao clonar desafios.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleImportFromTemplates = async () => {
+        if (selectedTemplates.size === 0) return;
+        setIsSaving(true);
+        try {
+            const batch = writeBatch(db);
+            const templatesToImport = globalTasks.filter(t => selectedTemplates.has(t.id));
+
+            templatesToImport.forEach(t => {
+                const newTaskRef = doc(collection(db, "tasks"));
+                const { id, ...data } = t as any;
+                batch.set(newTaskRef, {
+                    ...data,
+                    eventId: eventId,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    releaseDate: event.startDate?.toDate().toISOString().split('T')[0],
+                    deadline: event.endDate?.toDate().toISOString().split('T')[0]
+                });
+            });
+
+            await batch.commit();
+            alert(`${templatesToImport.length} modelos importados com sucesso!`);
+            setIsImportModalOpen(false);
+            setSelectedTemplates(new Set());
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao importar modelos.");
         } finally {
             setIsSaving(false);
         }
@@ -1021,13 +1156,21 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
                                 <Target size={20} /> Desafios / Requisitos
                             </h3>
-                            <Button size="sm" onClick={() => {
-                                setEditingTask(null);
-                                setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
-                                setIsTaskModalOpen(true);
-                            }} className="gap-2">
-                                <Plus size={16} /> Novo Desafio
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => {
+                                    setImportStep('type');
+                                    setIsImportModalOpen(true);
+                                }} className="gap-2 border-primary text-primary hover:bg-primary/5">
+                                    <FileDown size={16} /> Importar
+                                </Button>
+                                <Button size="sm" onClick={() => {
+                                    setEditingTask(null);
+                                    setTaskFormData({ title: "", description: "", points: 0, type: "text", deadline: "" });
+                                    setIsTaskModalOpen(true);
+                                }} className="gap-2">
+                                    <Plus size={16} /> Novo Desafio
+                                </Button>
+                            </div>
                         </div>
                         <div className="p-6">
                             {eventTasks.length > 0 ? (
@@ -1584,6 +1727,185 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     Confirmar e Aprovar
                                 </Button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Challenges Modal */}
+            {isImportModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden scale-in-center">
+                        <div className="p-6 bg-primary text-white flex justify-between items-center">
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                <FileDown /> Importar Desafios
+                            </h2>
+                            <button onClick={() => setIsImportModalOpen(false)} className="text-white/80 hover:text-white">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            {importStep === 'type' && (
+                                <div className="space-y-3">
+                                    <p className="text-gray-500 text-sm mb-4 text-center">Escolha como deseja adicionar novos desafios:</p>
+                                    <button
+                                        onClick={() => setImportStep('event')}
+                                        className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-blue-100 text-blue-600 p-2 rounded-xl group-hover:bg-primary group-hover:text-white transition-colors">
+                                                <Copy size={20} />
+                                            </div>
+                                            <div className="text-left">
+                                                <p className="font-bold text-gray-800">Clonar de outro Evento</p>
+                                                <p className="text-xs text-gray-500">Copia todos os desafios de um evento passado</p>
+                                            </div>
+                                        </div>
+                                        <ChevronRight size={20} className="text-gray-300" />
+                                    </button>
+
+                                    <button
+                                        onClick={() => setImportStep('global')}
+                                        className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-purple-100 text-purple-600 p-2 rounded-xl group-hover:bg-primary group-hover:text-white transition-colors">
+                                                <Target size={20} />
+                                            </div>
+                                            <div className="text-left">
+                                                <p className="font-bold text-gray-800">Modelos Globais</p>
+                                                <p className="text-xs text-gray-500">Escolha desafios da biblioteca padrão</p>
+                                            </div>
+                                        </div>
+                                        <ChevronRight size={20} className="text-gray-300" />
+                                    </button>
+
+                                    <button
+                                        onClick={() => setImportStep('text')}
+                                        className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-gray-100 hover:border-primary hover:bg-primary/5 transition-all group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-green-100 text-green-600 p-2 rounded-xl group-hover:bg-primary group-hover:text-white transition-colors">
+                                                <FileText size={20} />
+                                            </div>
+                                            <div className="text-left">
+                                                <p className="font-bold text-gray-800">Texto Rápido (Copia e Cola)</p>
+                                                <p className="text-xs text-gray-500">Importe via texto separado por vírgula</p>
+                                            </div>
+                                        </div>
+                                        <ChevronRight size={20} className="text-gray-300" />
+                                    </button>
+                                </div>
+                            )}
+
+                            {importStep === 'event' && (
+                                <div className="space-y-4">
+                                    <button onClick={() => setImportStep('type')} className="text-xs font-bold text-gray-400 hover:text-primary flex items-center gap-1 mb-2">
+                                        <ArrowLeft size={12} /> VOLTAR
+                                    </button>
+                                    <p className="text-sm font-bold text-gray-600">Selecione o evento de origem:</p>
+                                    <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                                        {allEventsTemplates.length > 0 ? (
+                                            allEventsTemplates.filter(e => e.id !== eventId).map(e => (
+                                                <button
+                                                    key={e.id}
+                                                    onClick={() => handleImportFromEvent(e.id)}
+                                                    className="w-full text-left p-3 rounded-xl border border-gray-100 hover:bg-gray-50 flex items-center justify-between"
+                                                >
+                                                    <div>
+                                                        <p className="font-bold text-sm text-gray-800">{e.title}</p>
+                                                        <p className="text-[10px] text-gray-400 uppercase tracking-widest">{e.startDate?.toDate().toLocaleDateString()}</p>
+                                                    </div>
+                                                    <ChevronRight size={16} className="text-gray-300" />
+                                                </button>
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-8">
+                                                <SearchX size={32} className="mx-auto text-gray-300 mb-2" />
+                                                <p className="text-xs text-gray-400">Nenhum evento passado encontrado.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {importStep === 'global' && (
+                                <div className="space-y-4">
+                                    <button onClick={() => setImportStep('type')} className="text-xs font-bold text-gray-400 hover:text-primary flex items-center gap-1 mb-2">
+                                        <ArrowLeft size={12} /> VOLTAR
+                                    </button>
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-sm font-bold text-gray-600">Selecione os modelos:</p>
+                                        <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">{selectedTemplates.size} selecionados</span>
+                                    </div>
+                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                        {globalTasks.length > 0 ? (
+                                            globalTasks.map(t => (
+                                                <div
+                                                    key={t.id}
+                                                    onClick={() => {
+                                                        const newSet = new Set(selectedTemplates);
+                                                        if (newSet.has(t.id)) newSet.delete(t.id);
+                                                        else newSet.add(t.id);
+                                                        setSelectedTemplates(newSet);
+                                                    }}
+                                                    className={clsx(
+                                                        "w-full text-left p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3",
+                                                        selectedTemplates.has(t.id) ? "border-primary bg-primary/5" : "border-gray-100 hover:bg-gray-50"
+                                                    )}
+                                                >
+                                                    <div className={clsx(
+                                                        "w-4 h-4 rounded border flex items-center justify-center shrink-0",
+                                                        selectedTemplates.has(t.id) ? "bg-primary border-primary" : "border-gray-300"
+                                                    )}>
+                                                        {selectedTemplates.has(t.id) && <CheckCircle2 size={10} className="text-white" />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-xs text-gray-800">{t.title}</p>
+                                                        <p className="text-[10px] text-gray-400 line-clamp-1">{t.description}</p>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-8">
+                                                <SearchX size={32} className="mx-auto text-gray-300 mb-2" />
+                                                <p className="text-xs text-gray-400">Nenhum modelo global encontrado.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Button onClick={handleImportFromTemplates} disabled={selectedTemplates.size === 0 || isSaving} className="w-full h-12 rounded-xl font-bold">
+                                        {isSaving ? <Loader2 className="animate-spin" /> : `Importar ${selectedTemplates.size} Selecionados`}
+                                    </Button>
+                                </div>
+                            )}
+
+                            {importStep === 'text' && (
+                                <div className="space-y-4">
+                                    <button onClick={() => setImportStep('type')} className="text-xs font-bold text-gray-400 hover:text-primary flex items-center gap-1 mb-2">
+                                        <ArrowLeft size={12} /> VOLTAR
+                                    </button>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-600 mb-1">Cole os desafios abaixo:</p>
+                                        <p className="text-[10px] text-gray-400 mb-3 uppercase tracking-wider">Formato: Título, Descrição, Pontos, Tipo</p>
+                                        <textarea
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 text-sm font-medium h-48 outline-none focus:border-primary/50 resize-none"
+                                            placeholder="Ex: Doação de Sangue, Tire uma foto doando, 200, upload"
+                                            value={importText}
+                                            onChange={e => setImportText(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="bg-blue-50 p-3 rounded-xl flex items-start gap-2">
+                                        <AlertCircle size={16} className="text-blue-600 mt-0.5" />
+                                        <p className="text-[10px] text-blue-700 leading-relaxed font-medium">
+                                            Cada linha representa um desafio. Os campos devem ser separados por vírgula. Tipos válidos: check, texto, upload, link.
+                                        </p>
+                                    </div>
+                                    <Button onClick={handleImportFromText} disabled={!importText.trim() || isSaving} className="w-full h-12 rounded-xl font-bold">
+                                        {isSaving ? <Loader2 className="animate-spin" /> : "Processar e Importar"}
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
