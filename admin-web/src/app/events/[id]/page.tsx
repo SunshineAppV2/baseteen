@@ -171,6 +171,11 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
         registrationType: "individual"
     });
 
+    const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+    const [isBulkDateModalOpen, setIsBulkDateModalOpen] = useState(false);
+    const [bulkDateFormData, setBulkDateFormData] = useState({ deadline: "", releaseDate: "" });
+    const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
     // Base Submission State
     const { data: mySubmissions } = useCollection<BaseSubmission>("base_submissions",
         user?.baseId ? [where("baseId", "==", user.baseId), where("eventId", "==", eventId)] : []
@@ -630,12 +635,61 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
     };
 
     const handleDeleteTask = async (taskId: string) => {
-        if (!confirm("Excluir este desafio?")) return;
+        if (!confirm("Tem certeza que deseja excluir este desafio?")) return;
         try {
-            await firestoreService.delete("tasks", taskId);
+            await deleteDoc(doc(db, "tasks", taskId));
         } catch (error) {
-            console.error(error);
-            alert("Erro ao excluir.");
+            console.error("Error deleting task:", error);
+            alert("Erro ao excluir desafio.");
+        }
+    };
+
+    const toggleTaskSelection = (taskId: string) => {
+        const newSelection = new Set(selectedTaskIds);
+        if (newSelection.has(taskId)) {
+            newSelection.delete(taskId);
+        } else {
+            newSelection.add(taskId);
+        }
+        setSelectedTaskIds(newSelection);
+    };
+
+    const handleSelectAllTasks = (select: boolean) => {
+        if (select) {
+            setSelectedTaskIds(new Set(eventTasks.map(t => t.id)));
+        } else {
+            setSelectedTaskIds(new Set());
+        }
+    };
+
+    const handleBulkUpdateDates = async () => {
+        if (selectedTaskIds.size === 0) return;
+        if (!bulkDateFormData.deadline && !bulkDateFormData.releaseDate) {
+            alert("Preencha pelo menos uma data.");
+            return;
+        }
+
+        setIsBulkUpdating(true);
+        try {
+            const batch = writeBatch(db);
+            selectedTaskIds.forEach(id => {
+                const taskRef = doc(db, "tasks", id);
+                const updateData: any = {};
+                if (bulkDateFormData.deadline) updateData.deadline = bulkDateFormData.deadline;
+                if (bulkDateFormData.releaseDate) updateData.releaseDate = bulkDateFormData.releaseDate;
+                batch.update(taskRef, updateData);
+            });
+
+            await batch.commit();
+            setIsBulkDateModalOpen(false);
+            setSelectedTaskIds(new Set());
+            setBulkDateFormData({ deadline: "", releaseDate: "" });
+            alert(`${selectedTaskIds.size} desafios atualizados com sucesso!`);
+        } catch (error) {
+            console.error("Error bulk updating tasks:", error);
+            alert("Erro ao atualizar desafios em massa.");
+        } finally {
+            setIsBulkUpdating(false);
         }
     };
 
@@ -1229,9 +1283,32 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                     {/* TASKS MANAGEMENT (Manager View) */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                         <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                                <Target size={20} /> Desafios / Requisitos
-                            </h3>
+                            <div className="flex items-center gap-6">
+                                <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                    <Target size={20} /> Desafios / Requisitos
+                                </h3>
+                                {eventTasks.length > 0 && (
+                                    <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg">
+                                        <button
+                                            onClick={() => handleSelectAllTasks(selectedTaskIds.size !== eventTasks.length)}
+                                            className="text-xs font-bold text-gray-500 hover:text-primary transition-colors flex items-center gap-1.5"
+                                        >
+                                            <div className={clsx(
+                                                "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                                                selectedTaskIds.size === eventTasks.length ? "bg-primary border-primary" : "border-gray-400 bg-white"
+                                            )}>
+                                                {selectedTaskIds.size === eventTasks.length && <CheckCircle2 size={10} className="text-white" />}
+                                            </div>
+                                            {selectedTaskIds.size === eventTasks.length ? "Desmarcar Todos" : "Selecionar Todos"}
+                                        </button>
+                                        {selectedTaskIds.size > 0 && (
+                                            <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-black">
+                                                {selectedTaskIds.size} SELECIONADOS
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                             <div className="flex gap-2">
                                 <Button size="sm" variant="outline" onClick={() => {
                                     setImportStep('type');
@@ -1252,7 +1329,25 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                             {eventTasks.length > 0 ? (
                                 <div className="space-y-3">
                                     {[...eventTasks].sort((a, b) => (parseInt(a.title.match(/^\d+/)?.[0] ?? '0') - parseInt(b.title.match(/^\d+/)?.[0] ?? '0'))).map(task => (
-                                        <div key={task.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-primary/30 transition-colors shadow-sm">
+                                        <div
+                                            key={task.id}
+                                            className={clsx(
+                                                "flex items-center justify-between p-4 bg-white border rounded-xl hover:border-primary/30 transition-colors shadow-sm cursor-pointer group",
+                                                selectedTaskIds.has(task.id) ? "border-primary bg-primary/5" : "border-gray-100"
+                                            )}
+                                            onClick={(e) => {
+                                                if ((e.target as HTMLElement).closest('button')) return;
+                                                toggleTaskSelection(task.id);
+                                            }}
+                                        >
+                                            <div className="mr-4">
+                                                <div className={clsx(
+                                                    "w-5 h-5 rounded-lg border flex items-center justify-center transition-all",
+                                                    selectedTaskIds.has(task.id) ? "bg-primary border-primary scale-110" : "border-gray-300 group-hover:border-primary/50"
+                                                )}>
+                                                    {selectedTaskIds.has(task.id) && <CheckCircle2 size={12} className="text-white" />}
+                                                </div>
+                                            </div>
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-3 mb-1">
                                                     <span className="font-bold text-gray-800">{task.title}</span>
@@ -1407,6 +1502,42 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                     )}
                 </div>
             </div>
+
+            {/* Bulk Actions Bar */}
+            {selectedTaskIds.size > 0 && (
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[50] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="bg-gray-900 text-white px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-6 backdrop-blur-md bg-opacity-90 border border-white/10">
+                        <div className="flex items-center gap-3 pr-6 border-r border-white/10">
+                            <div className="bg-primary p-2 rounded-xl">
+                                <Target size={20} />
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Selecionados</p>
+                                <p className="text-xl font-black">{selectedTaskIds.size} <span className="text-sm font-normal text-gray-400">desafios</span></p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <Button
+                                onClick={() => {
+                                    setBulkDateFormData({ deadline: "", releaseDate: "" });
+                                    setIsBulkDateModalOpen(true);
+                                }}
+                                className="bg-white text-gray-900 hover:bg-gray-100 font-bold px-6 py-2.5 rounded-xl flex items-center gap-2"
+                            >
+                                <Calendar size={18} /> Alterar Datas em Massa
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                onClick={() => setSelectedTaskIds(new Set())}
+                                className="text-gray-400 hover:text-white"
+                            >
+                                Cancelar
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Link Quiz Modal (Manager) */}
             {
@@ -2033,6 +2164,74 @@ export default function EventDetailsPage({ params }: { params: Promise<{ id: str
                                     </Button>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Date Update Modal */}
+            {isBulkDateModalOpen && (
+                <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl scale-in-center overflow-hidden">
+                        <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                            <div>
+                                <h3 className="font-black text-lg text-gray-800">Atualizar Datas</h3>
+                                <p className="text-[10px] text-primary font-black uppercase tracking-widest">{selectedTaskIds.size} desafios selecionados</p>
+                            </div>
+                            <button onClick={() => setIsBulkDateModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="bg-blue-50 p-3 rounded-xl flex gap-3 items-start">
+                                <AlertCircle size={18} className="text-blue-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-700 font-medium">As datas abaixo substituirão as datas atuais de todos os desafios selecionados.</p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Data de Início (Liberação)</label>
+                                    <div className="relative">
+                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                        <input
+                                            type="date"
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl py-3 pl-10 pr-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm transition-all"
+                                            value={bulkDateFormData.releaseDate}
+                                            onChange={e => setBulkDateFormData({ ...bulkDateFormData, releaseDate: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 opacity-70">Prazo de Entrega (Fim)</label>
+                                    <div className="relative">
+                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                        <input
+                                            type="date"
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl py-3 pl-10 pr-3 font-medium text-gray-700 outline-none focus:border-primary/50 text-sm transition-all"
+                                            value={bulkDateFormData.deadline}
+                                            onChange={e => setBulkDateFormData({ ...bulkDateFormData, deadline: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    className="flex-1 rounded-xl h-12 font-bold"
+                                    onClick={() => setIsBulkDateModalOpen(false)}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    className="flex-1 rounded-xl h-12 font-bold shadow-lg shadow-primary/20"
+                                    onClick={handleBulkUpdateDates}
+                                    disabled={isBulkUpdating || (!bulkDateFormData.deadline && !bulkDateFormData.releaseDate)}
+                                >
+                                    {isBulkUpdating ? <Loader2 className="animate-spin" size={18} /> : "Salvar Alterações"}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>
