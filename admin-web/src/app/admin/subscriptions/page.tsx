@@ -40,6 +40,30 @@ function SubscriptionManagementContent() {
     const [subscriptions, setSubscriptions] = useState<Record<string, Subscription>>({});
     const [isLoading, setIsLoading] = useState(true);
 
+    // Bulk selection state
+    const [selectedBaseIds, setSelectedBaseIds] = useState<Set<string>>(new Set());
+    const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+    const [showBulkCreateModal, setShowBulkCreateModal] = useState(false);
+    const [showBulkAddMemberModal, setShowBulkAddMemberModal] = useState(false);
+
+    const toggleBaseSelection = (baseId: string) => {
+        const newSet = new Set(selectedBaseIds);
+        if (newSet.has(baseId)) {
+            newSet.delete(baseId);
+        } else {
+            newSet.add(baseId);
+        }
+        setSelectedBaseIds(newSet);
+    };
+
+    const handleSelectAllBases = (visibleBases: Base[]) => {
+        if (selectedBaseIds.size === visibleBases.length) {
+            setSelectedBaseIds(new Set());
+        } else {
+            setSelectedBaseIds(new Set(visibleBases.map(b => b.id)));
+        }
+    };
+
     // Modals
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -501,6 +525,107 @@ function SubscriptionManagementContent() {
         }
     };
 
+    const handleBulkCreateSubscription = async () => {
+        if (selectedBaseIds.size === 0) return;
+        if (!confirm(`Deseja criar solicitações de assinatura para as ${selectedBaseIds.size} bases selecionadas?`)) return;
+
+        setIsBulkProcessing(true);
+        try {
+            const planConfig = SUBSCRIPTION_CONFIG.PLANS[plan.toUpperCase() as keyof typeof SUBSCRIPTION_CONFIG.PLANS];
+            const months = planConfig.months;
+            const amount = calculateSubscriptionAmount(memberLimit, plan);
+            const selectedDate = new Date(startDate + 'T12:00:00');
+
+            for (const baseId of Array.from(selectedBaseIds)) {
+                await createPayment({
+                    subscriptionId: baseId,
+                    baseId: baseId,
+                    type: 'subscription',
+                    amount,
+                    paymentMethod: 'pix',
+                    description: `${planConfig.name} (${memberLimit} membros)`,
+                    metadata: {
+                        memberCount: memberLimit,
+                        months,
+                        newMemberLimit: memberLimit,
+                        startDate: selectedDate
+                    }
+                });
+            }
+
+            alert(`Assinaturas criadas para ${selectedBaseIds.size} bases!`);
+            setShowBulkCreateModal(false);
+            setSelectedBaseIds(new Set());
+            loadData();
+        } catch (error: any) {
+            console.error('Error bulk creating:', error);
+            alert(`Erro na criação em lote: ${error.message}`);
+        } finally {
+            setIsBulkProcessing(false);
+        }
+    };
+
+    const handleBulkAddMembers = async () => {
+        if (selectedBaseIds.size === 0) return;
+        if (!confirm(`Deseja adicionar ${membersToAdd} membros para as ${selectedBaseIds.size} bases selecionadas?`)) return;
+
+        setIsBulkProcessing(true);
+        try {
+            for (const baseId of Array.from(selectedBaseIds)) {
+                // Here we use the addMemberAmount calculated in the UI for one, 
+                // but usually each base might have different months remaining if we wanted to be precise.
+                // However, for bulk, we'll apply the same amount/months to all for simplicity as per current modal logic.
+                await createPayment({
+                    subscriptionId: baseId,
+                    baseId: baseId,
+                    type: 'member_addition',
+                    amount: addMemberAmount,
+                    paymentMethod: 'pix',
+                    description: `Adiciona ${membersToAdd} Usuários por ${monthsToAdd} meses`,
+                    metadata: {
+                        memberCount: membersToAdd,
+                        months: monthsToAdd
+                    }
+                });
+            }
+
+            alert(`Adição de membros solicitada para ${selectedBaseIds.size} bases!`);
+            setShowBulkAddMemberModal(false);
+            setSelectedBaseIds(new Set());
+            loadData();
+        } catch (error: any) {
+            console.error('Error bulk adding members:', error);
+            alert(`Erro na adição em lote: ${error.message}`);
+        } finally {
+            setIsBulkProcessing(false);
+        }
+    };
+
+    const handleBulkDeleteBases = async () => {
+        if (selectedBaseIds.size === 0) return;
+        if (!confirm(`ATENÇÃO: Você está prestes a excluir ${selectedBaseIds.size} BASES. Esta ação é IRREVERSÍVEL e removerá também as assinaturas vinculadas. Deseja continuar?`)) return;
+
+        setIsBulkProcessing(true);
+        try {
+            for (const baseId of Array.from(selectedBaseIds)) {
+                // Check if has confirmed payments - deletePayment handles reversion logic if we call it on payments.
+                // But here we want to delete the BASE itself.
+                await deleteDoc(doc(db, 'bases', baseId));
+
+                // Also clean up subscription doc if exists
+                await deleteDoc(doc(db, 'subscriptions', baseId));
+            }
+            alert(`${selectedBaseIds.size} bases excluídas com sucesso.`);
+            setSelectedBaseIds(new Set());
+            loadData();
+        } catch (error: any) {
+            console.error('Error bulk deleting bases:', error);
+            alert(`Erro ao excluir bases: ${error.message}`);
+        } finally {
+            setIsBulkProcessing(false);
+        }
+    };
+
     const handleGenerateReceipt = (payment: PaymentWithBase) => {
         const sub = subscriptions[payment.baseId];
         if (!sub && payment.type === 'member_addition') {
@@ -650,10 +775,20 @@ function SubscriptionManagementContent() {
                 <>
                     {/* Bases without valid subscription (Quick Actions) */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                            <Plus size={20} className="text-blue-600" />
-                            Nova Assinatura / Adicionar Membros
-                        </h3>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                                <Plus size={20} className="text-blue-600" />
+                                Nova Assinatura / Adicionar Membros
+                            </h3>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSelectAllBases(filteredBases)}
+                                className="text-xs text-primary font-bold hover:bg-primary/5"
+                            >
+                                {selectedBaseIds.size === filteredBases.length ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                            </Button>
+                        </div>
                         <div className="flex flex-wrap gap-2">
                             {filteredBases.map(base => {
                                 const sub = subscriptions[base.id];
@@ -661,8 +796,17 @@ function SubscriptionManagementContent() {
                                 const isActive = sub && sub.status === 'active' && endDate > new Date();
 
                                 return (
-                                    <div key={base.id} className="flex flex-col gap-1 bg-gray-50 rounded-lg p-2 border border-gray-200 min-w-[200px]">
-                                        <div className="flex justify-between items-start">
+                                    <div
+                                        key={base.id}
+                                        onClick={() => toggleBaseSelection(base.id)}
+                                        className={clsx(
+                                            "flex flex-col gap-1 rounded-lg p-2 border transition-all cursor-pointer relative group",
+                                            selectedBaseIds.has(base.id)
+                                                ? "bg-primary/5 border-primary ring-2 ring-primary/20"
+                                                : "bg-gray-50 border-gray-200 hover:border-primary/50"
+                                        )}
+                                    >
+                                        <div className="flex justify-between items-start pr-6">
                                             <div className="flex flex-col">
                                                 <span className={`text-sm font-bold ${isActive ? 'text-green-700' : 'text-gray-900'}`}>
                                                     {base.name}
@@ -672,11 +816,22 @@ function SubscriptionManagementContent() {
                                                 </span>
                                             </div>
                                         </div>
+
+                                        {/* Checkbox */}
+                                        <div className={clsx(
+                                            "absolute top-2 right-2 w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                                            selectedBaseIds.has(base.id)
+                                                ? "bg-primary border-primary text-white"
+                                                : "bg-white border-gray-300 group-hover:border-primary"
+                                        )}>
+                                            {selectedBaseIds.has(base.id) && <Check size={14} strokeWidth={3} />}
+                                        </div>
+
                                         <div className="mt-1 flex justify-end">
                                             {!isActive ? (
                                                 <Button
                                                     size="sm"
-                                                    onClick={() => openCreateModal(base)}
+                                                    onClick={(e) => { e.stopPropagation(); openCreateModal(base); }}
                                                     className="h-7 bg-blue-600 hover:bg-blue-700 text-white text-xs px-2"
                                                 >
                                                     Criar Plano
@@ -684,7 +839,7 @@ function SubscriptionManagementContent() {
                                             ) : (
                                                 <Button
                                                     size="sm"
-                                                    onClick={() => openAddMemberModal(base)}
+                                                    onClick={(e) => { e.stopPropagation(); openAddMemberModal(base); }}
                                                     className="h-7 bg-green-600 hover:bg-green-700 text-white text-xs px-2 w-full"
                                                     title="Adicionar Membros"
                                                 >
@@ -1066,6 +1221,236 @@ function SubscriptionManagementContent() {
                                 className="flex-1 bg-green-600 hover:bg-green-700 text-white border-none"
                             >
                                 Gerar Cobrança
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Floating Bulk Actions Bar */}
+            {selectedBaseIds.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl border border-gray-800 flex items-center gap-6 min-w-[500px]">
+                        <div className="flex items-center gap-3 pr-6 border-r border-gray-700">
+                            <div className="bg-primary p-2 rounded-lg">
+                                <Building2 size={20} />
+                            </div>
+                            <div>
+                                <div className="text-sm font-bold">{selectedBaseIds.size} selecionadas</div>
+                                <div className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Ações em Massa</div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-1">
+                            <Button
+                                size="sm"
+                                onClick={() => setShowBulkCreateModal(true)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white border-none h-10 px-4"
+                            >
+                                <Plus size={18} className="mr-2" />
+                                Criar Assinaturas
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={() => setShowBulkAddMemberModal(true)}
+                                className="bg-green-600 hover:bg-green-700 text-white border-none h-10 px-4"
+                            >
+                                <Users size={18} className="mr-2" />
+                                + Membros
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={handleBulkDeleteBases}
+                                variant="outline"
+                                className="border-red-500/50 text-red-500 hover:bg-red-500/10 h-10 px-4"
+                            >
+                                <Trash2 size={18} className="mr-2" />
+                                Excluir
+                            </Button>
+                        </div>
+
+                        <button
+                            onClick={() => setSelectedBaseIds(new Set())}
+                            className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400"
+                            title="Limpar Seleção"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Subscription Modal */}
+            {showBulkCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <div className="bg-blue-50 p-4 rounded-xl mb-4 border border-blue-100">
+                            <h2 className="text-xl font-bold text-blue-900">
+                                Criar Assinaturas em Massa
+                            </h2>
+                            <p className="text-sm text-blue-700 mt-1">
+                                Aplicando para {selectedBaseIds.size} bases selecionadas.
+                            </p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    Limite de Membros
+                                </label>
+                                <input
+                                    type="number"
+                                    value={memberLimit}
+                                    onChange={(e) => setMemberLimit(parseInt(e.target.value) || 0)}
+                                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                    min="1"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    Plano
+                                </label>
+                                <select
+                                    value={plan}
+                                    onChange={(e) => setPlan(e.target.value as SubscriptionPlan)}
+                                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                >
+                                    <option value="monthly">Mensal (1 mês)</option>
+                                    <option value="quarterly">Trimestral (3 meses)</option>
+                                    <option value="semiannual">Semestral (6 meses)</option>
+                                    <option value="annual">Anual (12 meses)</option>
+                                    <option value="free">Livre (12 meses)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    Data Inicial
+                                </label>
+                                <input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-sm text-gray-600">Valor por Base:</span>
+                                    <span className="text-lg font-bold text-green-600">
+                                        R$ {calculateSubscriptionAmount(memberLimit, plan).toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-bold text-gray-900">Total Global:</span>
+                                    <span className="text-xl font-bold text-green-700">
+                                        R$ {(calculateSubscriptionAmount(memberLimit, plan) * selectedBaseIds.size).toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-8">
+                            <Button
+                                onClick={() => setShowBulkCreateModal(false)}
+                                variant="outline"
+                                className="flex-1"
+                                disabled={isBulkProcessing}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={handleBulkCreateSubscription}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                disabled={isBulkProcessing}
+                            >
+                                {isBulkProcessing ? 'Processando...' : 'Confirmar Lote'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Add Member Modal */}
+            {showBulkAddMemberModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                        <div className="bg-green-50 p-4 rounded-xl mb-4 border border-green-100">
+                            <h2 className="text-xl font-bold text-green-900">
+                                Adicionar Membros em Massa
+                            </h2>
+                            <p className="text-sm text-green-700 mt-1">
+                                Aplicando para {selectedBaseIds.size} bases selecionadas.
+                            </p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    Quantidade de Membros
+                                </label>
+                                <input
+                                    type="number"
+                                    value={membersToAdd}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setMembersToAdd(val);
+                                        setAddMemberAmount(calculateAddMemberAmount(val, monthsToAdd));
+                                    }}
+                                    className="w-full p-2 border border-gray-300 rounded-lg"
+                                    min="1"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    Meses
+                                </label>
+                                <input
+                                    type="number"
+                                    value={monthsToAdd}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setMonthsToAdd(val);
+                                        setAddMemberAmount(calculateAddMemberAmount(membersToAdd, val));
+                                    }}
+                                    className="w-full p-2 border border-gray-300 rounded-lg"
+                                    min="1"
+                                />
+                            </div>
+
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-sm text-gray-600">Valor por Base:</span>
+                                    <span className="text-lg font-bold text-green-600">
+                                        R$ {addMemberAmount.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-bold text-gray-900">Total Global:</span>
+                                    <span className="text-xl font-bold text-green-700">
+                                        R$ {(addMemberAmount * selectedBaseIds.size).toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-8">
+                            <Button
+                                onClick={() => setShowBulkAddMemberModal(false)}
+                                variant="outline"
+                                className="flex-1"
+                                disabled={isBulkProcessing}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={handleBulkAddMembers}
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                                disabled={isBulkProcessing}
+                            >
+                                {isBulkProcessing ? 'Processando...' : 'Gerar Cobranças'}
                             </Button>
                         </div>
                     </div>
