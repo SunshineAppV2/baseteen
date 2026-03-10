@@ -381,14 +381,14 @@ function SubscriptionManagementContent() {
             const districtsData = districtsSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })) as any[];
 
             // Load regions for context
             const regionsSnapshot = await getDocs(collection(db, 'regions'));
             const regionsData = regionsSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })) as any[];
 
             // Load bases
             const basesSnapshot = await getDocs(collection(db, 'bases'));
