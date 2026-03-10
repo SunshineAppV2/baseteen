@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { collection, getDocs, doc, setDoc, updateDoc, addDoc, serverTimestamp, Timestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, addDoc, deleteDoc, serverTimestamp, Timestamp, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
@@ -18,6 +18,7 @@ interface Base {
     name: string;
     districtId: string;
     districtName?: string;
+    associationId?: string;
 }
 
 interface PaymentWithBase extends Payment {
@@ -39,6 +40,8 @@ function SubscriptionManagementContent() {
     const [payments, setPayments] = useState<PaymentWithBase[]>([]);
     const [subscriptions, setSubscriptions] = useState<Record<string, Subscription>>({});
     const [isLoading, setIsLoading] = useState(true);
+    const [associations, setAssociations] = useState<any[]>([]);
+    const [selectedAssociationId, setSelectedAssociationId] = useState<string>('');
 
     // Bulk selection state
     const [selectedBaseIds, setSelectedBaseIds] = useState<Set<string>>(new Set());
@@ -248,6 +251,17 @@ function SubscriptionManagementContent() {
     function PendingUserList() {
         const { data: pendingUsers, loading: loadingUsers } = useCollection<any>("users", [where("status", "==", "pending")]);
 
+        const filteredUsers = pendingUsers.filter(u => {
+            const matchesAssociation = !selectedAssociationId || u.associationId === selectedAssociationId;
+            const searchLower = searchTerm.toLowerCase();
+            const matchesSearch = !searchTerm || (
+                (u.displayName || '').toLowerCase().includes(searchLower) ||
+                (u.email || '').toLowerCase().includes(searchLower) ||
+                (u.baseName || '').toLowerCase().includes(searchLower)
+            );
+            return matchesAssociation && matchesSearch;
+        });
+
         if (loadingUsers) {
             return (
                 <div className="space-y-4">
@@ -258,19 +272,19 @@ function SubscriptionManagementContent() {
             );
         }
 
-        if (pendingUsers.length === 0) {
+        if (filteredUsers.length === 0) {
             return (
                 <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
                     <UserPlus size={48} className="mx-auto text-gray-200 mb-4" />
-                    <h3 className="text-lg font-bold text-gray-900">Tudo em dia!</h3>
-                    <p className="text-gray-500">Nenhum novo cadastro aguardando análise.</p>
+                    <h3 className="text-lg font-bold text-gray-900">Nenhum resultado</h3>
+                    <p className="text-gray-500">Tente ajustar seus filtros ou busca.</p>
                 </div>
             );
         }
 
         return (
             <div className="space-y-4">
-                {pendingUsers.map((u) => (
+                {filteredUsers.map((u) => (
                     <div key={u.id} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row items-center gap-6">
                         <div className="flex-1 w-full flex items-center gap-4">
                             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
@@ -354,38 +368,63 @@ function SubscriptionManagementContent() {
     const loadData = async () => {
         setIsLoading(true);
         try {
+            // Load associations
+            const associationsSnapshot = await getDocs(collection(db, 'associations'));
+            const associationsData = associationsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data().name
+            })).sort((a, b) => a.name.localeCompare(b.name));
+            setAssociations(associationsData);
+
+            // Load districts for context (needed for associations)
+            const districtsSnapshot = await getDocs(collection(db, 'districts'));
+            const districtsData = districtsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Load regions for context
+            const regionsSnapshot = await getDocs(collection(db, 'regions'));
+            const regionsData = regionsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
             // Load bases
             const basesSnapshot = await getDocs(collection(db, 'bases'));
-            const basesData = basesSnapshot.docs.map(doc => ({
-                id: doc.id,
-                name: doc.data().name,
-                districtId: doc.data().districtId
-            }));
+            const basesData = basesSnapshot.docs.map(doc => {
+                const data = doc.data();
+                const district = districtsData.find(d => d.id === data.districtId);
+                const region = regionsData.find(r => r.id === district?.regionId);
+
+                return {
+                    id: doc.id,
+                    name: data.name,
+                    districtId: data.districtId,
+                    associationId: region?.associationId
+                };
+            });
             setBases(basesData);
 
             // Load payments/transactions
             const paymentsData = await getAllPayments();
             const sortedPayments = paymentsData
-                .map(p => ({
-                    ...p,
-                    baseName: basesData.find(b => b.id === p.baseId)?.name || 'Base não encontrada',
-                    createdAt: convertToDate(p.createdAt),
-                    confirmedAt: p.confirmedAt ? convertToDate(p.confirmedAt) : undefined
-                }))
-                .filter(p => p.status !== 'refunded') // Show refunded? Maybe in a seprate list or greyed out? User asked to "Update balance" and "Reverse", implying remove from visible/active balance.
-                // Request said "Delete". Our deletePayment deletes the doc if it wasn't confirmed, but if confirmed it reverts effects and deletes doc.
-                // So reloading data will naturally exclude deleted docs. 
-                // Only if we decided to *keep* refunded docs would we filter.
-                // But my deletePayment logic *deletes* the doc at the end. 
-                // Wait, if I delete the doc, I can't show it as "Estornado".
-                // User said "Update balance... and make reversal... to be correct".
-
-                // Let's stick to DELETING the document as requested ("Excluir").
-                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()); // Newest first
+                .map(p => {
+                    const base = basesData.find(b => b.id === p.baseId);
+                    return {
+                        ...p,
+                        baseName: base?.name || 'Base não encontrada',
+                        associationId: base?.associationId,
+                        createdAt: convertToDate(p.createdAt),
+                        confirmedAt: p.confirmedAt ? convertToDate(p.confirmedAt) : undefined
+                    };
+                })
+                .filter(p => p.status !== 'refunded')
+                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
             setPayments(sortedPayments);
 
-            // Load active subscriptions for reference (e.g. current limits)
+            // Load active subscriptions
             const subs: Record<string, Subscription> = {};
             for (const base of basesData) {
                 const sub = await getSubscription(base.id);
@@ -684,20 +723,24 @@ function SubscriptionManagementContent() {
     // Filter logic
     const filteredPayments = payments.filter(p => {
         const searchLower = searchTerm.toLowerCase();
-        return (
+        const matchesSearch = (
             p.baseName.toLowerCase().includes(searchLower) ||
             (p.districtName || '').toLowerCase().includes(searchLower) ||
             p.description.toLowerCase().includes(searchLower)
         );
+        const matchesAssociation = !selectedAssociationId || p.associationId === selectedAssociationId;
+        return matchesSearch && matchesAssociation;
     });
 
     const pendingPayments = filteredPayments.filter(p => p.status === 'pending');
     const paymentHistory = filteredPayments.filter(p => p.status !== 'pending');
 
-    const filteredBases = bases.filter(b =>
-        b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (b.districtName || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredBases = bases.filter(b => {
+        const matchesSearch = b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (b.districtName || '').toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesAssociation = !selectedAssociationId || b.associationId === selectedAssociationId;
+        return matchesSearch && matchesAssociation;
+    });
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -710,27 +753,57 @@ function SubscriptionManagementContent() {
                     <p className="text-gray-600 mt-1">Confirmar pagamentos e gerenciar planos</p>
                 </div>
 
-                <div className="flex gap-4">
-                    <Button
-                        variant="ghost"
-                        onClick={loadData}
-                        disabled={isLoading}
-                        className="h-auto px-4 text-gray-500 hover:text-primary"
-                        title="Recarregar Dados"
-                    >
-                        <RefreshCcw size={20} className={isLoading ? "animate-spin" : ""} />
-                    </Button>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-orange-100 flex flex-col items-end min-w-[180px]">
-                        <span className="text-sm text-gray-500 font-medium">Pendente</span>
-                        <span className="text-2xl font-bold text-orange-600">
-                            R$ {pendingPayments.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
-                        </span>
+                <div className="flex flex-col items-end gap-3">
+                    <div className="flex gap-4">
+                        <Button
+                            variant="ghost"
+                            onClick={loadData}
+                            disabled={isLoading}
+                            className="h-auto px-4 text-gray-500 hover:text-primary"
+                            title="Recarregar Dados"
+                        >
+                            <RefreshCcw size={20} className={isLoading ? "animate-spin" : ""} />
+                        </Button>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-orange-100 flex flex-col items-end min-w-[180px]">
+                            <span className="text-sm text-gray-500 font-medium">Pendente</span>
+                            <span className="text-2xl font-bold text-orange-600">
+                                R$ {pendingPayments.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
+                            </span>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-green-100 flex flex-col items-end min-w-[180px]">
+                            <span className="text-sm text-gray-500 font-medium">Total Recebido</span>
+                            <span className="text-2xl font-bold text-green-600">
+                                R$ {paymentHistory.filter(p => p.status === 'confirmed').reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
+                            </span>
+                        </div>
                     </div>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-green-100 flex flex-col items-end min-w-[180px]">
-                        <span className="text-sm text-gray-500 font-medium">Total Recebido</span>
-                        <span className="text-2xl font-bold text-green-600">
-                            R$ {paymentHistory.filter(p => p.status === 'confirmed').reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}
-                        </span>
+
+                    <div className="flex gap-3 w-full max-w-xl">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                            <input
+                                type="text"
+                                placeholder="Buscar por base, distrito ou descrição..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                            />
+                        </div>
+                        <div className="relative w-64">
+                            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                            <select
+                                value={selectedAssociationId}
+                                onChange={(e) => setSelectedAssociationId(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all appearance-none cursor-pointer"
+                            >
+                                <option value="">Todas Associações</option>
+                                {associations.map(assoc => (
+                                    <option key={assoc.id} value={assoc.id}>
+                                        {assoc.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
