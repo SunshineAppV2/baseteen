@@ -24,6 +24,7 @@ interface Base {
 interface PaymentWithBase extends Payment {
     baseName: string;
     districtName?: string;
+    associationId?: string;
 }
 
 const convertToDate = (date: any): Date => {
