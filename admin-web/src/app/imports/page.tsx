@@ -3,8 +3,11 @@
 import { useState, useMemo } from "react";
 import { useCollection, firestoreService } from "@/hooks/useFirestore";
 import { Button } from "@/components/ui/Button";
-import { Upload, CheckCircle, AlertCircle, X, Network, Layers, Map as MapIcon, MapPin, Home, Users, Globe } from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, X, Network, Layers, Map as MapIcon, MapPin, Home, Users, Globe, UserCheck, Key, ShieldCheck, Contact } from "lucide-react";
 import { clsx } from "clsx";
+import { initializeApp, deleteApp, getApps } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signOut as signOutSecondary } from "firebase/auth";
+import { firebaseConfig } from "@/services/firebase";
 
 interface Union { id: string; name: string; }
 interface Association { id: string; name: string; unionId: string; }
@@ -12,7 +15,7 @@ interface Region { id: string; name: string; associationId: string; }
 interface District { id: string; name: string; associationId: string; unionId: string; }
 interface Base { id: string; name: string; districtId: string; }
 
-type ImportTab = 'unions' | 'associations' | 'regions' | 'districts' | 'bases' | 'members' | 'hierarchy';
+type ImportTab = 'unions' | 'associations' | 'regions' | 'districts' | 'bases' | 'members' | 'hierarchy' | 'coordinators';
 type ImportResult = { added: string[], skipped: string[], errors: string[] };
 
 export default function ImportsPage() {
@@ -43,7 +46,8 @@ export default function ImportsPage() {
         { id: 'regions' as ImportTab, label: 'Regiões', icon: MapIcon, needsParent: true, parentLabel: 'Associação' },
         { id: 'districts' as ImportTab, label: 'Distritos', icon: MapPin, needsParent: true, parentLabel: 'Associação' },
         { id: 'bases' as ImportTab, label: 'Bases', icon: Home, needsParent: true, parentLabel: 'Distrito' },
-        { id: 'members' as ImportTab, label: 'Membros', icon: Users, needsParent: true, parentLabel: 'Base' }
+        { id: 'members' as ImportTab, label: 'Membros', icon: Users, needsParent: true, parentLabel: 'Base' },
+        { id: 'coordinators' as ImportTab, label: 'Coordenadores de Base', icon: ShieldCheck, needsParent: false }
     ];
 
     const getParentOptions = () => {
@@ -228,9 +232,157 @@ export default function ImportsPage() {
         setImportText("");
     };
 
+    const handleCoordinatorImport = async () => {
+        if (!importText.trim()) return alert("Cole os dados dos coordenadores!");
+
+        setIsProcessing(true);
+        setResults(null);
+
+        const added: string[] = [];
+        const skipped: string[] = [];
+        const errors: string[] = [];
+        const normalize = (s: string) => s.toLowerCase().trim();
+
+        // Local cache of IDs
+        const resolvedUnions = new Map(unions.map(u => [normalize(u.name), u.id]));
+        const resolvedAssocs = new Map(associations.map(a => [`${a.unionId}|${normalize(a.name)}`, a.id]));
+        const resolvedRegions = new Map(regions.map(r => [`${r.associationId}|${normalize(r.name)}`, r.id]));
+        const resolvedDistricts = new Map(districts.map(d => [`${d.associationId}|${normalize(d.name)}`, d.id]));
+        const resolvedBases = new Map(bases.map(b => [`${b.districtId}|${normalize(b.name)}`, b.id]));
+
+        const lines = importText.split('\n').filter(l => l.trim().length > 0);
+
+        // Skip header if it looks like one
+        const firstLine = lines[0].toLowerCase();
+        const dataLines = (firstLine.includes('nome') || firstLine.includes('email') || firstLine.includes('base')) ? lines.slice(1) : lines;
+
+        const secondaryAppName = "bulkUserImportApp";
+        let secondaryApp;
+
+        try {
+            const existingApps = getApps();
+            secondaryApp = existingApps.find(app => app.name === secondaryAppName) || initializeApp(firebaseConfig, secondaryAppName);
+            const secondaryAuth = getAuth(secondaryApp);
+
+            for (const line of dataLines) {
+                const parts = line.split(/\t|;|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(p => p.trim().replace(/^"|"$/g, ''));
+                if (parts.length < 5) {
+                    errors.push(`${line} (Formato inválido)`);
+                    continue;
+                }
+
+                // Format: Nome; Email; Base; Distrito; Regiao; Associacao (optional, uses district if omitted)
+                const [coordName, coordEmail, baseName, distritoName, regionName, assocName] = parts;
+
+                try {
+                    // 1. Find Hierarchy (Assoc is needed for uniqueness in some cases)
+                    const normalizedAssoc = assocName ? normalize(assocName) : null;
+                    const normalizedRegion = normalize(regionName);
+                    const normalizedDistrict = normalize(distritoName);
+
+                    // Find Association
+                    let assocId = "";
+                    if (normalizedAssoc) {
+                        const assoc = associations.find(a => normalize(a.name) === normalizedAssoc);
+                        if (!assoc) throw new Error(`Associação "${assocName}" não encontrada`);
+                        assocId = assoc.id;
+                    } else {
+                        // Infer from district if unique, or throw
+                        const possibleDistricts = districts.filter(d => normalize(d.name) === normalizedDistrict);
+                        if (possibleDistricts.length === 1) assocId = possibleDistricts[0].associationId;
+                        else if (possibleDistricts.length > 1) throw new Error(`Distrito "${distritoName}" é ambíguo. Especifique a Associação.`);
+                        else throw new Error(`Distrito "${distritoName}" não encontrado`);
+                    }
+
+                    const unionId = associations.find(a => a.id === assocId)?.unionId;
+                    if (!unionId) throw new Error("Não foi possível determinar a União");
+
+                    // Find Region (within Assoc)
+                    const region = regions.find(r => r.associationId === assocId && normalize(r.name) === normalizedRegion);
+                    if (!region) throw new Error(`Região "${regionName}" não encontrada na associação`);
+                    const regionId = region.id;
+
+                    // Find District (within Assoc/Region)
+                    const district = districts.find(d => d.associationId === assocId && normalize(d.name) === normalizedDistrict);
+                    if (!district) throw new Error(`Distrito "${distritoName}" não encontrado na associação`);
+                    const districtId = district.id;
+
+                    // 2. Create/Find Base
+                    const baseKey = `${districtId}|${normalize(baseName)}`;
+                    let baseId = resolvedBases.get(baseKey);
+
+                    if (baseId === "exists") {
+                        // Need the real ID for user association
+                        const existingBase = bases.find(b => b.districtId === districtId && normalize(b.name) === normalize(baseName));
+                        baseId = existingBase?.id;
+                    }
+
+                    if (!baseId) {
+                        const docRef = await firestoreService.add("bases", {
+                            name: baseName,
+                            districtId,
+                            regionId,
+                            associationId: assocId,
+                            unionId,
+                            baseType: 'teen',
+                            totalXp: 0,
+                            completedTasks: 0,
+                            createdAt: new Date()
+                        });
+                        baseId = docRef.id;
+                        resolvedBases.set(baseKey, baseId);
+                        added.push(`Base: ${baseName}`);
+                    }
+
+                    // 3. Create User Account
+                    try {
+                        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, coordEmail, "Base@2026");
+                        const uid = userCredential.user.uid;
+
+                        await firestoreService.set("users", uid, {
+                            displayName: coordName,
+                            email: coordEmail,
+                            role: "coord_base",
+                            unionId,
+                            associationId: assocId,
+                            regionId,
+                            districtId,
+                            baseId,
+                            participatesInRanking: true,
+                            stats: { level: 1, currentXp: 0 },
+                            createdAt: new Date()
+                        });
+
+                        await signOutSecondary(secondaryAuth);
+                        added.push(`Coordenador: ${coordName} (${coordEmail})`);
+                    } catch (authErr: any) {
+                        if (authErr.code === 'auth/email-already-in-use') {
+                            skipped.push(`${coordEmail} (E-mail já cadastrado)`);
+                        } else {
+                            throw authErr;
+                        }
+                    }
+
+                } catch (err: any) {
+                    errors.push(`${coordName} - ${err.message}`);
+                }
+            }
+        } finally {
+            if (secondaryApp) await deleteApp(secondaryApp).catch(console.error);
+            setResults({ added, skipped, errors });
+            setIsProcessing(false);
+            setImportText("");
+        }
+    };
+
     const handleImport = async () => {
         if (activeTab === 'hierarchy') {
             await handleHierarchyImport();
+            return;
+        }
+
+        if (activeTab === 'coordinators') {
+            await handleCoordinatorImport();
             return;
         }
 
@@ -381,12 +533,16 @@ export default function ImportsPage() {
                         onChange={(e) => setImportText(e.target.value)}
                         placeholder={activeTab === 'hierarchy'
                             ? "União Norte Brasileira\tAssociação Norte do Pará\tREGIÃO VI - CAPANEMA\tBairro da Paz\tCachoeira do Piriá\n..."
-                            : `Cole a lista aqui...\nExemplo:\nItem 1\nItem 2\nItem 3`}
+                            : activeTab === 'coordinators'
+                                ? "João da Silva; joao@email.com; Base Estrela; Distrito Central; Região I; Associação Norte\nMaria Santos; maria@email.com; Base Aurora; Distrito Leste; Região II; Associação Norte"
+                                : `Cole a lista aqui...\nExemplo:\nItem 1\nItem 2\nItem 3`}
                     />
                     <p className="text-xs text-gray-500">
                         {activeTab === 'hierarchy'
                             ? "Cole os dados copiados diretamente do Excel (colunas: União, Associação, Região, Igreja, Distrito). O sistema criará toda a estrutura automaticamente."
-                            : "Cole a lista de nomes, um por linha. Itens que já existem serão pulados automaticamente."}
+                            : activeTab === 'coordinators'
+                                ? "Formato: Nome; Email; Base; Distrito; Região; Associação (opcional se o distrito for único). A senha padrão será Base@2026."
+                                : "Cole a lista de nomes, um por linha. Itens que já existem serão pulados automaticamente."}
                     </p>
                 </div>
 
